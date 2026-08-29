@@ -1,0 +1,500 @@
+<meta charset="utf-8">
+<title>Softshell 软壳</title>
+<link rel="icon" type="image/png" href="data:image/png;base64,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">
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  /* 表情用系统自带的彩色表情字体渲染。长什么样由用户自己的 Windows/Mac 决定，
+     所以这里只点名字体，不带任何图片资源。 */
+  body {
+    margin: 0; background: #ededed; display: flex; flex-direction: column;
+    font: 15px/1.65 -apple-system, "Segoe UI", "Microsoft YaHei",
+          "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+    color: #1a1a1a;
+  }
+  header {
+    background: #f7f7f7; border-bottom: 1px solid #ddd;
+    padding: 10px 14px; text-align: center; font-weight: 600; position: relative;
+    flex: none;
+  }
+  #newbtn {
+    position: absolute; right: 10px; top: 7px; background: none; border: 1px solid #ccc;
+    border-radius: 5px; padding: 3px 10px; font-size: 12px; color: #666; cursor: pointer;
+  }
+  #newbtn:hover { background: #eee; }
+  #chat { flex: 1; overflow-y: auto; padding: 14px 12px 20px; }
+  .row { display: flex; margin: 9px 0; }
+  .row.user { justify-content: flex-end; }
+  .bubble {
+    max-width: 80%; padding: 9px 12px; border-radius: 8px; background: #fff;
+    box-shadow: 0 1px 1px rgba(0,0,0,.06); word-break: break-word;
+  }
+  .user .bubble { background: #95ec69; }
+  .thought .bubble {
+    background: transparent; box-shadow: none; color: #9a9a9a;
+    font-size: 13px; padding: 2px 12px;
+  }
+  .bubble img { max-width: 220px; border-radius: 6px; display: block; margin: 4px 0; }
+  /* 表情包气泡：不切图，整张缩进去 */
+  .bubble img.sticker { max-width: 140px; max-height: 140px; object-fit: contain; }
+  .chip { text-align: center; color: #b0b0b0; font-size: 12px; margin: 5px 0; }
+  .err { color: #d64541; }
+  pre {
+    background: #f6f6f6; border: 1px solid #e8e8e8; border-radius: 6px;
+    padding: 8px 10px; overflow-x: auto; font-size: 13px; line-height: 1.5; margin: 6px 0;
+  }
+  code { background: #f0f0f0; border-radius: 3px; padding: 1px 4px; font-size: 13px; }
+  pre code { background: none; padding: 0; }
+  #strip {
+    display: none; gap: 8px; padding: 6px 10px; background: #f7f7f7;
+    border-top: 1px solid #ddd; flex: none; flex-wrap: wrap;
+  }
+  .pend { position: relative; }
+  .pend img { height: 52px; border-radius: 5px; display: block; }
+  .pend a {
+    position: absolute; top: -6px; right: -6px; background: #888; color: #fff;
+    border-radius: 50%; width: 17px; height: 17px; line-height: 17px;
+    text-align: center; font-size: 11px; cursor: pointer;
+  }
+
+  /* ── 表情面板 ── */
+  #panel {
+    display: none; flex-direction: column; height: 252px; flex: none;
+    background: #f7f7f7; border-top: 1px solid #ddd;
+  }
+  #panel.open { display: flex; }
+  #tabs {
+    display: flex; gap: 3px; padding: 6px 8px; flex: none;
+    border-bottom: 1px solid #e5e5e5; overflow-x: auto; white-space: nowrap;
+  }
+  .tab {
+    padding: 4px 11px; border-radius: 6px; font-size: 13px; color: #666;
+    cursor: pointer; flex: none;
+  }
+  .tab:hover { background: #ececec; }
+  .tab.on { background: #e0e0e0; color: #111; }
+  #grid { flex: 1; overflow-y: auto; padding: 4px 8px 10px; }
+  .gtitle { font-size: 12px; color: #a5a5a5; margin: 8px 2px 2px; }
+  .grow { display: flex; flex-wrap: wrap; }
+  .emo {
+    width: 36px; height: 36px; line-height: 36px; text-align: center;
+    font-size: 21px; cursor: pointer; border-radius: 6px; user-select: none;
+  }
+  .emo:hover { background: #e6e6e6; }
+  .stk {
+    width: 74px; height: 74px; margin: 3px; padding: 2px; cursor: pointer;
+    background: #fff; border: 1px solid #e8e8e8; border-radius: 8px;
+    object-fit: contain;   /* 竖图横图都完整显示，一个像素都不切 */
+  }
+  .stk:hover { border-color: #07c160; }
+  .empty { color: #999; font-size: 13px; padding: 16px 6px; line-height: 1.9; }
+  .empty b { color: #666; font-weight: 600; }
+
+  footer {
+    background: #f7f7f7; border-top: 1px solid #ddd; padding: 8px;
+    display: flex; gap: 6px; flex: none; align-items: flex-end;
+  }
+  #emobtn, #attach {
+    background: none; border: 1px solid #ccc; border-radius: 6px; color: #555;
+    font-size: 18px; padding: 8px 11px; cursor: pointer; flex: none;
+  }
+  #emobtn:hover, #attach:hover { background: #eee; }
+  #emobtn.on { background: #e3e3e3; border-color: #aaa; }
+  textarea {
+    flex: 1; border: 1px solid #ddd; border-radius: 6px; padding: 9px 10px;
+    resize: none; height: 46px; font: inherit; outline: none; background: #fff;
+  }
+  textarea:focus { border-color: #07c160; }
+  #send {
+    background: #07c160; color: #fff; border: 0; border-radius: 6px;
+    padding: 11px 18px; font: inherit; cursor: pointer; flex: none;
+  }
+  #send:disabled { opacity: .45; cursor: default; }
+  #send.stopping { background: #8a8a8a; }
+  .dots { color: #999; font-size: 13px; }
+</style>
+
+<header>
+  Claude
+  <button id="newbtn" title="结束当前话题，开新对话">新对话</button>
+</header>
+<div id="chat"></div>
+<div id="strip"></div>
+<div id="panel">
+  <div id="tabs"></div>
+  <div id="grid"></div>
+</div>
+<footer>
+  <button id="emobtn" title="表情和表情包">😀</button>
+  <button id="attach" title="发图片（也可以直接Ctrl+V粘贴截图）">📎</button>
+  <input id="file" type="file" accept="image/*" multiple style="display:none">
+  <textarea id="input" placeholder="说话（Enter发送，Shift+Enter换行，Ctrl+V可贴图）"></textarea>
+  <button id="send">发送</button>
+</footer>
+
+<script>
+  var chat = document.getElementById('chat');
+  var ta = document.getElementById('input');
+  var btn = document.getElementById('send');
+  var strip = document.getElementById('strip');
+  var fileInput = document.getElementById('file');
+  var panel = document.getElementById('panel');
+  var tabsEl = document.getElementById('tabs');
+  var gridEl = document.getElementById('grid');
+  var emobtn = document.getElementById('emobtn');
+  var busy = false;
+  var curRid = null;      // 本次请求的id，停止时告诉后端杀哪个
+  var curAbort = null;    // 中断前端的流式读取
+  var pending = [];
+
+  /* ── 表情数据：全部是 Unicode 字符，不带任何图片资源。
+        显示成什么样，由用户自己电脑上的表情字体决定。 ── */
+  var EMOJI = [
+    ['笑脸', '😀|开心 😃|大笑 😄|笑眼 😁|呲牙 😆|眯眼笑 😅|苦笑 🤣|笑翻 😂|笑哭 🙂|微笑 🙃|倒脸 😉|眨眼 😊|羞笑 😇|天使 🥰|爱意 😍|花痴 🤩|星星眼 😘|飞吻 😗|亲亲 😚|闭眼亲 🥲|含泪笑 😋|好吃 😛|吐舌 😜|调皮 🤪|疯了 😝|扮鬼脸 🤑|发财 🤗|抱抱 🤭|捂嘴 🤫|嘘 🤔|思考 🤐|闭嘴 🤨|挑眉 😐|面无表情 😑|无语 😶|沉默 😏|坏笑 😒|鄙视 🙄|翻白眼 😬|尴尬 😌|满足 😔|失落 😪|困 🤤|流口水 😴|睡着 😷|口罩 🤒|生病 🤕|受伤 🤢|想吐 🤮|呕吐 🥵|热 🥶|冷 😵|晕 🤯|裂开 🤠|牛仔 🥳|庆祝 😎|酷 🤓|书呆子 🧐|审视 😕|困惑 😟|担心 🙁|不开心 ☹️|难过 😮|惊讶 😯|愣住 😲|震惊 🥺|可怜 😢|流泪 😭|大哭 😱|惊恐 😖|抓狂 😣|难受 😞|失望 😓|冷汗 😩|累 😫|崩溃 🥱|哈欠 😤|傲慢 😡|生气 😠|恼火 🤬|骂人 😈|小恶魔 👿|愤怒 💀|骷髅 💩|便便 🤡|小丑 👻|幽灵 👽|外星人 🤖|机器人 😺|猫笑 😹|猫笑哭 😻|猫花痴 🙈|不看 🙉|不听 🙊|不说'],
+    ['手势', '👍|赞 👎|踩 👌|OK 🤌|捏 🤏|一点点 ✌️|耶 🤞|祈祷 🤟|爱你 🤘|摇滚 🤙|打电话 👈|左 👉|右 👆|上 👇|下 ☝️|指 ✋|停 🤚|举手 🖐️|张开手 🖖|瓦肯礼 👋|挥手 🤝|握手 🙏|拜托 ✊|拳头 👊|出拳 🤛|左拳 🤜|右拳 👏|鼓掌 🙌|举双手 👐|摊开 🤲|捧 💪|肌肉 🫰|比心 🫶|爱心手 ✍️|写字 👀|眼睛 👂|听 👃|闻 🧠|脑子'],
+    ['爱心', '❤️|红心 🧡|橙心 💛|黄心 💚|绿心 💙|蓝心 💜|紫心 🖤|黑心 🤍|白心 🤎|棕心 💔|心碎 ❣️|心叹号 💕|两颗心 💞|旋转心 💓|心跳 💗|心变大 💖|闪亮心 💘|丘比特 💝|心礼物 💟|心装饰 ✨|闪 💫|晕 💥|爆炸 🔥|火 💯|满分 ⭐|星 🌟|闪星'],
+    ['人物', '🙋|举手 🙆|好 🙅|不行 💁|摊手 🤷|耸肩 🤦|捂脸 🙇|鞠躬 🧎|跪 🚶|走 🏃|跑 💃|跳舞 🕺|男舞 🧘|打坐 🛌|躺平 👶|宝宝 👼|小天使 🎅|圣诞老人 🦸|英雄 🧑‍💻|敲代码 👩‍🍳|做饭 💤|睡'],
+    ['动物花草', '🐶|狗 🐱|猫 🐭|老鼠 🐹|仓鼠 🐰|兔子 🦊|狐狸 🐻|熊 🐼|熊猫 🐨|考拉 🐯|老虎 🦁|狮子 🐮|牛 🐷|猪 🐸|青蛙 🐵|猴子 🐔|鸡 🐧|企鹅 🐦|小鸟 🦆|鸭子 🦉|猫头鹰 🐺|狼 🐴|马 🦄|独角兽 🐝|蜜蜂 🐛|虫子 🦋|蝴蝶 🐌|蜗牛 🐢|乌龟 🐍|蛇 🐙|章鱼 🦀|螃蟹 🐟|鱼 🐬|海豚 🐳|鲸鱼 🦈|鲨鱼 🐉|龙 🌸|樱花 🌹|玫瑰 🌻|向日葵 🌷|郁金香 🍀|四叶草 🌿|叶子 🪴|盆栽'],
+    ['食物', '🍎|苹果 🍊|橘子 🍋|柠檬 🍌|香蕉 🍉|西瓜 🍇|葡萄 🍓|草莓 🍑|桃子 🥭|芒果 🍍|菠萝 🥝|猕猴桃 🍅|番茄 🥑|牛油果 🌽|玉米 🥕|胡萝卜 🍞|面包 🥐|可颂 🧀|奶酪 🍖|肉 🍗|鸡腿 🍔|汉堡 🍟|薯条 🍕|披萨 🌭|热狗 🥪|三明治 🌮|塔可 🍜|拉面 🍝|意面 🍣|寿司 🍱|便当 🍚|米饭 🥟|饺子 🍤|炸虾 🍦|冰淇淋 🍩|甜甜圈 🍪|饼干 🎂|生日蛋糕 🍰|蛋糕 🧁|纸杯蛋糕 🍫|巧克力 🍬|糖 🍭|棒棒糖 ☕|咖啡 🍵|茶 🧋|奶茶 🍺|啤酒 🍻|干杯 🥂|香槟 🍷|红酒 🥤|饮料'],
+    ['活动', '🎉|庆祝 🎊|彩带 🎈|气球 🎁|礼物 🧧|红包 🎀|蝴蝶结 🎄|圣诞树 🎃|南瓜 🎆|烟花 🏆|奖杯 🥇|金牌 🥈|银牌 🥉|铜牌 ⚽|足球 🏀|篮球 🏓|乒乓 🎮|游戏 🎯|靶心 🎲|骰子 🎵|音符 🎶|音乐 🎤|麦克风 🎧|耳机 📷|相机 🎬|开拍 🚀|火箭'],
+    ['物品', '💰|钱 💵|钞票 💳|银行卡 📱|手机 💻|电脑 ⌨️|键盘 🖱️|鼠标 🖨️|打印机 📚|书 📖|翻书 ✏️|铅笔 🖊️|笔 📝|记一下 📌|图钉 📎|回形针 🔍|放大镜 🔑|钥匙 🔒|锁 🔔|铃 📢|喇叭 ⏰|闹钟 ⌛|沙漏 📅|日历 📊|图表 🗑️|垃圾桶 🛠️|工具 ⚙️|设置 🔋|电池 💡|灯泡'],
+    ['符号', '✅|对 ❌|错 ⭕|圈 ❓|问号 ❗|感叹号 ‼️|双感叹 ⚠️|警告 🈲|禁止 🆗|好的 🆕|新 🔴|红 🟠|橙 🟡|黄 🟢|绿 🔵|蓝 🟣|紫 ⚫|黑 ⚪|白 ♻️|回收 ☀️|太阳 🌙|月亮 ☁️|云 🌧️|下雨 ⛈️|雷雨 ❄️|雪花 ⛄|雪人 🌈|彩虹 💧|水滴 🌊|海浪']
+  ];
+  var EMOJI_NAME = {};
+  EMOJI.forEach(function (cat) {
+    cat[1].split(' ').forEach(function (pair) {
+      var i = pair.indexOf('|');
+      if (i > 0) EMOJI_NAME[pair.slice(0, i)] = pair.slice(i + 1);
+    });
+  });
+
+  var STICKERS = [];   // [{name:'用户专用', items:['a.jpg',...]}]
+  var STK_MAP = {};    // 表情名 -> '用户专用/a.jpg'
+  var curTab = 0;      // 0 = 表情，1起 = 各个表情包文件夹
+
+  function stickerUrl(id) { return '/sticker?f=' + encodeURIComponent(id); }
+
+  function esc(s) {
+    // 也转义引号：文件名会被塞进 title/alt 属性里
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function unesc(s) {
+    return s.replace(/&quot;/g, '"').replace(/&gt;/g, '>')
+            .replace(/&lt;/g, '<').replace(/&amp;/g, '&');
+  }
+  function md(s) {
+    var parts = String(s).split('```');
+    var html = '';
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i];
+      if (i % 2 === 1) {
+        var nl = p.indexOf('\n');
+        var code = nl >= 0 ? p.slice(nl + 1) : p;
+        html += '<pre>' + esc(code) + '</pre>';
+      } else {
+        var t = esc(p);
+        // Claude 写 [[表情:名字]] 就渲染成那张表情包；认不出的名字原样留着，好排查
+        t = t.replace(/\[\[(?:表情|sticker)[:：]\s*([^\]]+?)\s*\]\]/g, function (m, name) {
+          var id = STK_MAP[unesc(name)];
+          return id ? '<img class="sticker" src="' + stickerUrl(id) + '" alt="' + name + '">' : m;
+        });
+        t = t.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+        t = t.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+        t = t.replace(/\n/g, '<br>');
+        html += t;
+      }
+    }
+    return html;
+  }
+  function bubble(cls, html) {
+    var d = document.createElement('div');
+    d.className = 'row ' + cls;
+    d.innerHTML = '<div class="bubble">' + html + '</div>';
+    chat.appendChild(d);
+    chat.scrollTop = chat.scrollHeight;
+    return d;
+  }
+  function chip(text) {
+    var d = document.createElement('div');
+    d.className = 'chip';
+    d.textContent = text;
+    chat.appendChild(d);
+    chat.scrollTop = chat.scrollHeight;
+  }
+  function handle(ev) {
+    if (ev.kind === 'text') bubble('bot', md(ev.text));
+    else if (ev.kind === 'thinking') bubble('thought', md(ev.text));
+    else if (ev.kind === 'tool') chip('⚙ ' + ev.name);
+    else if (ev.kind === 'note') chip(ev.text);
+    else if (ev.kind === 'error') bubble('bot', '<span class="err">' + md(ev.text) + '</span>');
+  }
+
+  /* ── 表情面板 ── */
+  function getRecent() {
+    try { return JSON.parse(localStorage.getItem('recentEmoji') || '[]'); } catch (e) { return []; }
+  }
+  function pushRecent(ch) {
+    try {
+      var r = getRecent().filter(function (x) { return x !== ch; });
+      r.unshift(ch);
+      localStorage.setItem('recentEmoji', JSON.stringify(r.slice(0, 16)));
+    } catch (e) { /* 无痕模式之类的，存不了就算了 */ }
+  }
+  function insertAtCursor(s) {
+    var st = ta.selectionStart, en = ta.selectionEnd, v = ta.value;
+    ta.value = v.slice(0, st) + s + v.slice(en);
+    ta.selectionStart = ta.selectionEnd = st + s.length;
+    ta.focus();
+  }
+  function emojiCells(pairs) {
+    var h = '<div class="grow">';
+    pairs.forEach(function (pair) {
+      var i = pair.indexOf('|');
+      var ch = i > 0 ? pair.slice(0, i) : pair;
+      var nm = i > 0 ? pair.slice(i + 1) : (EMOJI_NAME[pair] || '');
+      h += '<span class="emo" data-emo="' + esc(ch) + '" title="' + esc(nm) + '">' + esc(ch) + '</span>';
+    });
+    return h + '</div>';
+  }
+  function renderTabs() {
+    var h = '<span class="tab' + (curTab === 0 ? ' on' : '') + '" data-tab="0">表情</span>';
+    STICKERS.forEach(function (g, i) {
+      h += '<span class="tab' + (curTab === i + 1 ? ' on' : '') + '" data-tab="' + (i + 1) +
+           '">' + esc(g.name) + '</span>';
+    });
+    tabsEl.innerHTML = h;
+  }
+  function renderGrid() {
+    if (curTab === 0) {
+      var h = '';
+      var rec = getRecent();
+      if (rec.length) h += '<div class="gtitle">最近使用</div>' + emojiCells(rec);
+      EMOJI.forEach(function (cat) {
+        h += '<div class="gtitle">' + esc(cat[0]) + '</div>' + emojiCells(cat[1].split(' '));
+      });
+      gridEl.innerHTML = h;
+      return;
+    }
+    var g = STICKERS[curTab - 1];
+    if (!g) { gridEl.innerHTML = ''; return; }
+    if (!g.items.length) {
+      gridEl.innerHTML = '<div class="empty">这个文件夹还是空的。<br>' +
+        '把图片拖进 <b>stickers\\' + esc(g.name) + '\\</b> 就会出现在这里，<br>' +
+        '不用重启，关掉面板再点开就有了。</div>';
+      return;
+    }
+    var h = '<div class="grow">';
+    g.items.forEach(function (fn) {
+      var id = g.name + '/' + fn;
+      var nm = fn.replace(/\.[^.]+$/, '');
+      h += '<img class="stk" src="' + stickerUrl(id) + '" data-stk="' + esc(id) +
+           '" title="' + esc(nm) + '" alt="' + esc(nm) + '">';
+    });
+    gridEl.innerHTML = h + '</div>';
+  }
+  function loadStickers() {
+    return fetch('/stickers').then(function (r) { return r.json(); }).then(function (g) {
+      STICKERS = g || [];
+      STK_MAP = {};
+      STICKERS.forEach(function (grp) {
+        grp.items.forEach(function (fn) {
+          var id = grp.name + '/' + fn;
+          var bare = fn.replace(/\.[^.]+$/, '');
+          // 四种写法都认：文件名、带后缀、带文件夹、文件夹+后缀
+          STK_MAP[bare] = STK_MAP[bare] || id;
+          STK_MAP[fn] = id;
+          STK_MAP[grp.name + '/' + bare] = id;
+          STK_MAP[id] = id;
+        });
+      });
+      if (curTab > STICKERS.length) curTab = 0;
+    }).catch(function () { /* 桥接还没起来，下次点开面板再试 */ });
+  }
+  function openPanel() {
+    loadStickers().then(function () { renderTabs(); renderGrid(); });
+    panel.classList.add('open');
+    emobtn.classList.add('on');
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    emobtn.classList.remove('on');
+  }
+  emobtn.addEventListener('click', function () {
+    if (panel.classList.contains('open')) closePanel(); else openPanel();
+  });
+  tabsEl.addEventListener('click', function (e) {
+    var t = e.target.dataset ? e.target.dataset.tab : null;
+    if (t === undefined || t === null) return;
+    curTab = Number(t);
+    renderTabs(); renderGrid();
+    gridEl.scrollTop = 0;
+  });
+  gridEl.addEventListener('click', function (e) {
+    var d = e.target.dataset || {};
+    if (d.emo) {                      // 表情：插进输入框，可以跟话混着打
+      insertAtCursor(d.emo);
+      pushRecent(d.emo);
+    } else if (d.stk) {               // 表情包：直接发出去
+      closePanel();
+      send(d.stk);
+    }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  /* ── 待发图片 ── */
+  function renderPending() {
+    strip.innerHTML = '';
+    pending.forEach(function (p, i) {
+      var w = document.createElement('span');
+      w.className = 'pend';
+      w.innerHTML = '<img src="' + p.url + '"><a data-i="' + i + '">×</a>';
+      strip.appendChild(w);
+    });
+    strip.style.display = pending.length ? 'flex' : 'none';
+  }
+  strip.addEventListener('click', function (e) {
+    if (e.target.dataset && e.target.dataset.i !== undefined) {
+      pending.splice(Number(e.target.dataset.i), 1);
+      renderPending();
+    }
+  });
+  function addFile(f) {
+    if (!f || String(f.type).indexOf('image/') !== 0) return;
+    pending.push({ file: f, url: URL.createObjectURL(f) });
+    renderPending();
+  }
+  document.getElementById('attach').addEventListener('click', function () {
+    fileInput.click();
+  });
+  fileInput.addEventListener('change', function () {
+    for (var i = 0; i < fileInput.files.length; i++) addFile(fileInput.files[i]);
+    fileInput.value = '';
+  });
+  ta.addEventListener('paste', function (e) {
+    var items = (e.clipboardData || {}).items || [];
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].type && items[i].type.indexOf('image/') === 0) {
+        addFile(items[i].getAsFile());
+        e.preventDefault();
+      }
+    }
+  });
+  function extOf(f) {
+    var m = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
+    return m[f.type] || 'png';
+  }
+
+  async function stopRun() {
+    if (!busy) return;
+    var rid = curRid;
+    btn.textContent = '停止中';
+    try {
+      await fetch('/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rid: rid })
+      });
+    } catch (e) { /* 后端已经没了也无所谓 */ }
+    if (curAbort) { try { curAbort.abort(); } catch (e) {} }
+  }
+
+  function setBusy(on) {
+    busy = on;
+    btn.disabled = false;
+    btn.textContent = on ? '■' : '发送';
+    btn.title = on ? '停止（Esc）' : '';
+    btn.classList.toggle('stopping', on);
+  }
+
+  async function send(stickerId) {
+    if (busy) return;
+    var text = stickerId ? '' : ta.value.trim();
+    var imgs = stickerId ? [] : pending.slice();
+    var stks = stickerId ? [stickerId] : [];
+    if (!text && !imgs.length && !stks.length) return;
+    if (!stickerId) {
+      ta.value = '';
+      pending = [];
+      renderPending();
+    }
+    curRid = 'r' + Date.now() + '-' + Math.floor(Math.random() * 100000);
+    curAbort = new AbortController();
+    setBusy(true);
+
+    var uhtml = md(text);
+    imgs.forEach(function (p) { uhtml += '<img src="' + p.url + '">'; });
+    stks.forEach(function (id) {
+      uhtml += '<img class="sticker" src="' + stickerUrl(id) + '">';
+    });
+    bubble('user', uhtml);
+    var typing = bubble('bot', '<span class="dots">正在思考…</span>');
+
+    try {
+      var paths = [];
+      for (var i = 0; i < imgs.length; i++) {
+        var up = await fetch('/upload?ext=' + extOf(imgs[i].file), {
+          method: 'POST', body: imgs[i].file
+        });
+        var uj = await up.json();
+        paths.push(uj.path);
+      }
+      var res = await fetch('/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text, images: paths, stickers: stks, rid: curRid }),
+        signal: curAbort.signal
+      });
+      var reader = res.body.getReader();
+      var dec = new TextDecoder();
+      var buf = '';
+      while (true) {
+        var r = await reader.read();
+        if (r.done) break;
+        buf += dec.decode(r.value, { stream: true });
+        var idx;
+        while ((idx = buf.indexOf('\n')) >= 0) {
+          var line = buf.slice(0, idx).trim();
+          buf = buf.slice(idx + 1);
+          if (!line) continue;
+          var ev;
+          try { ev = JSON.parse(line); } catch (e) { continue; }
+          handle(ev);
+          chat.appendChild(typing);
+          chat.scrollTop = chat.scrollHeight;
+        }
+      }
+    } catch (e) {
+      if (!(e && e.name === 'AbortError')) {
+        bubble('bot', '<span class="err">连接断了：' + esc(String(e)) + '</span>');
+      }
+    }
+    typing.remove();
+    curRid = null; curAbort = null;
+    setBusy(false);
+    ta.focus();
+  }
+
+  btn.addEventListener('click', function () {
+    if (busy) { stopRun(); } else { send(); }
+  });
+  // Esc 也能停
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && busy) { e.preventDefault(); stopRun(); }
+  });
+  ta.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+  document.getElementById('newbtn').addEventListener('click', function () {
+    fetch('/new', { method: 'POST' }).then(function () {
+      chat.innerHTML = '';
+      bubble('bot', '新对话开始了。');
+      ta.focus();
+    });
+  });
+
+  loadStickers();   // 先把表情包名字表拉下来，Claude 一上来就发表情也认得出
+  ta.focus();
+</script>

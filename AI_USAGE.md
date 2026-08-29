@@ -1,0 +1,45 @@
+# AI 使用说明 / AI Usage
+
+本项目在 AI 协助下完成。这份文件说明人和 AI 各自做了什么。
+
+*This project was built with AI assistance. This file summarizes the division of work between the human author and the AI.*
+
+---
+
+## 人：YAN YAN
+
+**产品构想与形态。** 做一个聊天软件风格的窗口来使用 Claude Code CLI，这个想法和它的全部形态设计出自作者。
+
+**全部产品决策。** 项目名、图标概念（白贝壳含绿珍珠）、开源与许可证、免费发布、对外表述的每一句话，以及每一次取舍——是否接入真实 IM（否）、是否提供 AI 人格设定（否）、是否移除权限确认（是，因为频繁询问打断工作流）——均由作者决定。
+
+**功能设计。** 表情包文件夹机制、以文件名作为语义标签、AI 主动向用户索要素材、头像位留空由用户自填、不引导用户建立情感陪伴关系——这些设计出自作者。
+
+**测试与纠错。** 作者是唯一的实际使用者，全部缺陷由作者在使用中发现并提出，包括但不限于：会话未隔离、无法中断运行、图标沿用了他方标识、图标配色撞上既有产品、文案带说教口吻、文案隐含贬低同类产品、发布包中混入无效的本机专用文件。
+
+**文案审校。** README 及所有对外文字由作者逐句审改。
+
+**最终决定权。** AI 提出的方案与判断，作者多次否决或改写；采纳与否均由作者决定。
+
+## AI：Anthropic Claude（Fable 5、Opus 5）
+
+**按指令编写代码。** Python 桥接程序、HTML 界面、路径通用化、图标生成脚本。
+
+**事实查证。** 法规条文、平台条款、竞品调研、技术方案比选、崩溃根因的日志验证。
+
+**文档起草。** 提供初稿供作者审改。
+
+**排错与验证。** 复现问题、定位原因、验证修复。
+
+---
+
+## 关于对话记录
+
+完整的人机对话记录由作者本地留存，未公开发布。
+
+*Complete human–AI conversation logs are retained locally by the author and are not published.*
+
+## 关于著作权
+
+本项目著作权归 YAN YAN。AI 是创作工具，不是作者，未被列为作者或共同作者。
+
+*Copyright in this project belongs to YAN YAN. The AI is a tool used in creation, not an author, and is not listed as an author or co-author.*

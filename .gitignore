@@ -1,0 +1,29 @@
+# ── 用户私有数据，绝不上传 ──
+session.txt
+uploads/
+
+# 表情包：保留文件夹和说明文件，但不上传任何图片
+stickers/**/*.jpg
+stickers/**/*.jpeg
+stickers/**/*.png
+stickers/**/*.gif
+stickers/**/*.webp
+stickers/**/*.bmp
+
+# ── Python 缓存 ──
+__pycache__/
+*.pyc
+
+# ── 开发用，不随发布上传 ──
+restart.ps1
+
+# ── 开发过程中的临时文件 ──
+*.bak
+*.new.py
+*.new.html
+*.orig
+
+# ── 操作系统杂物 ──
+Thumbs.db
+desktop.ini
+.DS_Store
