@@ -48,7 +48,7 @@ Claude 桌面版在任务进行中会要求授权各种操作权限。**Softshel
 Softshell **不捆绑 Claude Code CLI**，你需要自己安装它、用自己的账号登录。
 
 ```bash
-git clone https://github.com/你的用户名/softshell.git
+git clone https://github.com/mckeygilham618-hub/softshell.git
 cd softshell
 python bridge.py
 ```
