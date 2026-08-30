@@ -74,15 +74,54 @@ IMG_TYPES = {
     ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
 }
 
-# 每段新对话的第一条消息带上这句。不带的话，新会话里的Claude不知道自己也能发表情包。
-# 这里故意不列出有哪些表情包：判断权交给模型，它不想发表情包就不必花token去翻文件夹。
-INTRO = (
-    "(这是「Softshell」窗口。" + STICKER_DIR + " 里有表情包，如果你认为需要发表情包，"
-    "可以去翻看那个文件夹，以写 [[表情:xxx]] 来输出表情包给用户，"
-    "xxx 是图片的文件名（带不带后缀都认）。直接打 Unicode emoji 也可以。"
-    "如果文件夹里没有你想要的那个表情，你可以用文字写出自己的表情和动作，像RP那样；"
-    "也可以直接跟用户说，能不能在表情包文件夹里给你加一个XX表情。)"
-)
+# 外观状态：当前头像、聊天背景用的是哪张图。Claude 改这个文件就等于换装。
+STATE_FILE = os.path.join(DIR, "state.json")
+LOOK_KEYS = ("avatar_claude", "avatar_user", "background")
+
+
+def load_state():
+    try:
+        with open(STATE_FILE, encoding="utf-8-sig") as f:
+            st = json.load(f)
+        return st if isinstance(st, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def look_state_line():
+    """给 Claude 看的当前外观描述。XX 直接取表情包文件名。"""
+    st = load_state()
+
+    def nm(key, default):
+        p = sticker_path(st.get(key) or "")
+        if not p:
+            return default
+        return "「" + os.path.splitext(os.path.basename(p))[0] + "」"
+
+    return ("当前外观状态：你是%s头像，用户是%s头像，聊天背景是%s。" % (
+        nm("avatar_claude", "默认白色方块"),
+        nm("avatar_user", "默认绿色方块"),
+        nm("background", "默认素色"),
+    ))
+
+
+# 每段新对话的第一条消息带上这段。不带的话，新会话里的Claude不知道自己也能发表情包、换头像。
+# 这里故意不列出文件夹里有哪些图：判断权交给模型，它用不上就不必花token去翻。
+def intro_text():
+    return (
+        "(这是「Softshell」窗口。" + STICKER_DIR + " 里有表情包，如果你认为需要发表情包，"
+        "可以去翻看那个文件夹，以写 [[表情:xxx]] 来输出表情包给用户，"
+        "xxx 是图片的文件名（带不带后缀都认）。直接打 Unicode emoji 也可以。"
+        "如果文件夹里没有你想要的那个表情，你可以用文字写出自己的表情和动作，像RP那样；"
+        "也可以直接跟用户说，能不能在表情包文件夹里给你加一个XX表情，"
+        "或者请用户往里加头像图、聊天背景图。\n"
+        "表情包文件夹里除了表情，可能还混着头像图和聊天背景图。" + look_state_line() +
+        "用户要求换头像或聊天背景时：List文件名找图就行，不必读图片内容；"
+        "认不出用户说的是哪张，就直接问文件名。"
+        "然后把「子文件夹/文件名.后缀」写进 " + STATE_FILE +
+        " 的对应键：avatar_claude / avatar_user / background（JSON对象，没有该文件就新建）。"
+        "写完不用做别的，你回复结束时窗口自动刷新；把键置空就恢复默认。)"
+    )
 
 
 # ── 正在运行的 claude 进程登记表：让前端能中断 ──
@@ -239,6 +278,18 @@ class Handler(BaseHTTPRequestHandler):
             except OSError:
                 self.send_error(404)
             return
+        if path == "/look":
+            st = load_state()
+            out = {}
+            for k in LOOK_KEYS:
+                rel = st.get(k) or ""
+                out[k] = rel if sticker_path(rel) else ""
+            self._send_bytes(
+                json.dumps(out, ensure_ascii=False).encode("utf-8"),
+                "application/json; charset=utf-8",
+                {"Cache-Control": "no-store"},
+            )
+            return
         if path == "/stickers":
             self._send_bytes(
                 json.dumps(sticker_groups(), ensure_ascii=False).encode("utf-8"),
@@ -321,7 +372,7 @@ class Handler(BaseHTTPRequestHandler):
             text = (text or ("我发了一个" + what + "。")) + \
                 "\n\n(我发了" + what + "，请先用Read工具查看这些文件再回答: " + " ; ".join(images) + ")"
         if not sid:
-            text += "\n\n" + INTRO
+            text += "\n\n" + intro_text()
 
         self.send_response(200)
         self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")

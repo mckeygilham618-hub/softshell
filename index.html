@@ -22,9 +22,20 @@
     border-radius: 5px; padding: 3px 10px; font-size: 12px; color: #666; cursor: pointer;
   }
   #newbtn:hover { background: #eee; }
-  #chat { flex: 1; overflow-y: auto; padding: 14px 12px 20px; }
-  .row { display: flex; margin: 9px 0; }
+  #chat {
+    flex: 1; overflow-y: auto; padding: 14px 12px 20px;
+    background-size: cover; background-position: center;
+  }
+  .row { display: flex; margin: 9px 0; gap: 8px; }
   .row.user { justify-content: flex-end; }
+  /* 头像：默认纯色方块（Claude白、用户绿），换过图就盖在上面 */
+  .avatar {
+    width: 38px; height: 38px; border-radius: 4px; flex: none;
+    overflow: hidden; margin-top: 1px;
+  }
+  .avatar.claude { background: #fff; box-shadow: 0 1px 1px rgba(0,0,0,.06); }
+  .avatar.user { background: #07c160; }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; display: none; }
   .bubble {
     max-width: 80%; padding: 9px 12px; border-radius: 8px; background: #fff;
     box-shadow: 0 1px 1px rgba(0,0,0,.06); word-break: break-word;
@@ -32,7 +43,7 @@
   .user .bubble { background: #95ec69; }
   .thought .bubble {
     background: transparent; box-shadow: none; color: #9a9a9a;
-    font-size: 13px; padding: 2px 12px;
+    font-size: 13px; padding: 2px 12px; margin-left: 46px;
   }
   .bubble img { max-width: 220px; border-radius: 6px; display: block; margin: 4px 0; }
   /* 表情包气泡：不切图，整张缩进去 */
@@ -207,10 +218,21 @@
     }
     return html;
   }
+  function avatarHtml(who) {
+    var rel = LOOK['avatar_' + who] || '';
+    var img = rel
+      ? '<img src="' + stickerUrl(rel) + '" style="display:block" ' +
+        'onerror="this.style.display=\'none\'">'
+      : '<img style="display:none">';
+    return '<div class="avatar ' + who + '">' + img + '</div>';
+  }
   function bubble(cls, html) {
     var d = document.createElement('div');
     d.className = 'row ' + cls;
-    d.innerHTML = '<div class="bubble">' + html + '</div>';
+    var inner = '<div class="bubble">' + html + '</div>';
+    if (cls === 'bot') d.innerHTML = avatarHtml('claude') + inner;
+    else if (cls === 'user') d.innerHTML = inner + avatarHtml('user');
+    else d.innerHTML = inner;
     chat.appendChild(d);
     chat.scrollTop = chat.scrollHeight;
     return d;
@@ -311,6 +333,33 @@
       if (curTab > STICKERS.length) curTab = 0;
     }).catch(function () { /* 桥接还没起来，下次点开面板再试 */ });
   }
+  /* ── 外观：头像和聊天背景。状态在 state.json 里，Claude 改完它，
+        这里拉一次 /look 就全变了 ── */
+  var LOOK = {};
+  function applyLook() {
+    chat.style.backgroundImage =
+      LOOK.background ? 'url("' + stickerUrl(LOOK.background) + '")' : '';
+    document.querySelectorAll('.avatar').forEach(function (a) {
+      var who = a.classList.contains('claude') ? 'claude' : 'user';
+      var rel = LOOK['avatar_' + who] || '';
+      var img = a.querySelector('img');
+      if (!img) return;
+      if (rel) {
+        img.onerror = function () { this.style.display = 'none'; };
+        img.src = stickerUrl(rel) + '&t=' + Date.now();
+        img.style.display = 'block';
+      } else {
+        img.style.display = 'none';
+        img.removeAttribute('src');
+      }
+    });
+  }
+  function loadLook() {
+    return fetch('/look').then(function (r) { return r.json(); })
+      .then(function (l) { LOOK = l || {}; applyLook(); })
+      .catch(function () { /* 桥接还没起来就算了 */ });
+  }
+
   function openPanel() {
     loadStickers().then(function () { renderTabs(); renderGrid(); });
     panel.classList.add('open');
@@ -474,6 +523,7 @@
     typing.remove();
     curRid = null; curAbort = null;
     setBusy(false);
+    loadLook();   // Claude 这轮要是换了头像/背景，回复一结束就生效
     ta.focus();
   }
 
@@ -496,5 +546,6 @@
   });
 
   loadStickers();   // 先把表情包名字表拉下来，Claude 一上来就发表情也认得出
+  loadLook();       // 恢复上次的头像和聊天背景
   ta.focus();
 </script>
