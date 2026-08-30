@@ -1,6 +1,9 @@
 # ── 用户私有数据，绝不上传 ──
 session.txt
 uploads/
+groups/
+history/
+exports/
 
 # 表情包：保留文件夹和说明文件，但不上传任何图片
 stickers/**/*.jpg
@@ -28,3 +31,5 @@ Thumbs.db
 desktop.ini
 .DS_Store
 state.json
+sessions.json
+looks/

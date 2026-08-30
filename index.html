@@ -1,17 +1,68 @@
 <meta charset="utf-8">
 <title>Softshell 软壳</title>
-<link rel="icon" type="image/png" href="data:image/png;base64,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">
+<link rel="icon" type="image/png" href="data:image/png;base64,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">
 <style>
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   /* 表情用系统自带的彩色表情字体渲染。长什么样由用户自己的 Windows/Mac 决定，
      所以这里只点名字体，不带任何图片资源。 */
   body {
-    margin: 0; background: #ededed; display: flex; flex-direction: column;
+    margin: 0; background: #ededed; display: flex; flex-direction: row;
     font: 15px/1.65 -apple-system, "Segoe UI", "Microsoft YaHei",
           "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
     color: #1a1a1a;
   }
+  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; height: 100%; }
+
+  /* ── 左侧会话列表（照微信）── */
+  #sidebar {
+    width: 232px; flex: none; background: #f4f4f4; border-right: 1px solid #ddd;
+    display: flex; flex-direction: column; height: 100%;
+  }
+  #sbtop {
+    padding: 10px; flex: none; display: flex; gap: 8px; align-items: center;
+  }
+  #newconv {
+    flex: 1; border: 1px solid #ccc; background: #fbfbfb; border-radius: 6px;
+    padding: 6px 0; font-size: 13px; color: #555; cursor: pointer;
+  }
+  #newconv:hover { background: #fff; }
+  #convlist { flex: 1; overflow-y: auto; }
+  .conv {
+    display: flex; gap: 9px; padding: 11px 10px; cursor: pointer;
+    align-items: center; user-select: none;
+  }
+  .conv:hover { background: #ebebeb; }
+  .conv.on { background: #07c160; color: #fff; }
+  .cava {
+    width: 40px; height: 40px; border-radius: 4px; flex: none;
+    background: #fff; overflow: hidden; box-shadow: 0 1px 1px rgba(0,0,0,.08);
+  }
+  .cava img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cmain { flex: 1; min-width: 0; }
+  .crow1 { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+  .cname {
+    font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ctime { font-size: 11px; color: #b0b0b0; flex: none; }
+  .conv.on .ctime { color: rgba(255,255,255,.75); }
+  .clast {
+    font-size: 12px; color: #a0a0a0; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; margin-top: 2px;
+  }
+  .conv.on .clast { color: rgba(255,255,255,.8); }
+  .cname input {
+    width: 100%; border: 1px solid #07c160; border-radius: 4px;
+    font: inherit; padding: 1px 4px; outline: none; color: #1a1a1a;
+  }
+  #ctxmenu {
+    position: fixed; display: none; background: #fff; border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,.18); padding: 5px; z-index: 90;
+    font-size: 13px; min-width: 110px;
+  }
+  #ctxmenu div { padding: 7px 14px; border-radius: 5px; cursor: pointer; }
+  #ctxmenu div:hover { background: #f2f2f2; }
+  #ctxmenu .danger { color: #d64541; }
   header {
     background: #f7f7f7; border-bottom: 1px solid #ddd;
     padding: 10px 14px; text-align: center; font-weight: 600; position: relative;
@@ -101,6 +152,81 @@
   .empty { color: #999; font-size: 13px; padding: 16px 6px; line-height: 1.9; }
   .empty b { color: #666; font-weight: 600; }
 
+  /* ── 群聊 ── */
+  .cava.grp {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; background: #e8f6ee;
+  }
+  .bcol { max-width: 80%; min-width: 0; }
+  .bcol .bubble { max-width: 100%; }
+  .mname { font-size: 11px; color: #9a9a9a; margin: 0 0 2px 2px; }
+  #newgroup {
+    flex: none; border: 1px solid #ccc; background: #fbfbfb; border-radius: 6px;
+    padding: 6px 10px; font-size: 13px; cursor: pointer;
+  }
+  #newgroup:hover { background: #fff; }
+  #gpanel {
+    position: fixed; display: none; left: 50%; top: 45%;
+    transform: translate(-50%, -50%); background: #fff; border-radius: 12px;
+    box-shadow: 0 8px 40px rgba(0,0,0,.25); padding: 16px; z-index: 100; width: 300px;
+  }
+  #gpanel.open { display: block; }
+  #gpanel h3 { margin: 0 0 10px; font-size: 15px; }
+  #gpanel input[type=text] {
+    width: 100%; border: 1px solid #ddd; border-radius: 6px; padding: 7px 9px;
+    font: inherit; outline: none; margin-bottom: 6px;
+  }
+  #gpanel input[type=text]:focus { border-color: #07c160; }
+  .glist { max-height: 220px; overflow-y: auto; }
+  .gitem { display: flex; gap: 8px; align-items: center; padding: 6px 4px; cursor: pointer; }
+  .gitem:hover { background: #f6f6f6; border-radius: 6px; }
+  .gbtns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+  .gbtns button {
+    border: 1px solid #ccc; background: #fbfbfb; border-radius: 6px;
+    padding: 6px 14px; cursor: pointer; font: inherit; font-size: 13px;
+  }
+  .gbtns button.primary { background: #07c160; color: #fff; border-color: #07c160; }
+  #grouphint {
+    float: left; max-width: 70%; overflow: hidden;
+    white-space: nowrap; text-overflow: ellipsis;
+  }
+
+  /* ── 查找 / 置顶 / 回放 ── */
+  #searchbtn {
+    position: absolute; right: 10px; top: 7px; background: none; border: 1px solid #ccc;
+    border-radius: 5px; padding: 3px 9px; font-size: 13px; cursor: pointer;
+  }
+  #searchbtn:hover { background: #eee; }
+  .conv.pinned:not(.on) { background: #ececec; }
+  .conv.pinned:not(.on):hover { background: #e3e3e3; }
+  #spanel {
+    position: fixed; display: none; left: 50%; top: 12%; transform: translateX(-50%);
+    background: #fff; border-radius: 12px; box-shadow: 0 8px 40px rgba(0,0,0,.25);
+    padding: 14px; z-index: 100; width: 440px; max-width: 92vw;
+  }
+  #spanel.open { display: block; }
+  .srow { display: flex; gap: 8px; align-items: center; }
+  #sq {
+    flex: 1; border: 1px solid #ddd; border-radius: 6px; padding: 7px 10px;
+    font: inherit; outline: none;
+  }
+  #sq:focus { border-color: #07c160; }
+  #sclose {
+    border: 0; background: none; font-size: 18px; color: #999;
+    cursor: pointer; padding: 2px 6px;
+  }
+  #stabs { display: flex; gap: 3px; padding: 8px 0 4px; border-bottom: 1px solid #eee; }
+  #sresults { max-height: 52vh; overflow-y: auto; margin-top: 4px; }
+  .sitem { padding: 8px 6px; border-radius: 6px; cursor: pointer; }
+  .sitem:hover { background: #f5f5f5; }
+  .srow1 { display: flex; justify-content: space-between; font-size: 12px; color: #888; }
+  .srow1 b { font-weight: 600; color: #444; }
+  .ssnip {
+    font-size: 13px; color: #333; margin-top: 2px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .row.hl .bubble { outline: 2px solid #f5c518; }
+
   footer {
     background: #f7f7f7; border-top: 1px solid #ddd; padding: 8px;
     display: flex; gap: 6px; flex: none; align-items: flex-end;
@@ -160,10 +286,35 @@
   .bubble li { margin: 2px 0; }
 </style>
 
-<header>
-  Claude
-  <button id="newbtn" title="结束当前话题，开新对话">新对话</button>
-</header>
+<div id="sidebar">
+  <div id="sbtop"><button id="newconv">＋ 新会话</button><button id="newgroup" title="把几个会话拉进一个群">👥 群</button></div>
+  <div id="convlist"></div>
+</div>
+<div id="ctxmenu">
+  <div id="ctxpin">置顶</div>
+  <div id="ctxrename">改名</div>
+  <div id="ctxexport">导出聊天记录</div>
+  <div id="ctxdelete" class="danger">删除会话</div>
+</div>
+<div id="gpanel">
+  <h3>拉个群</h3>
+  <input type="text" id="gname" placeholder="群名（可留空）">
+  <div class="glist" id="glist"></div>
+  <div class="gbtns"><button id="gcancel">取消</button><button id="gok" class="primary">建群</button></div>
+</div>
+<div class="popmenu" id="atmenu" style="left:250px;right:auto;bottom:64px"></div>
+<div id="spanel">
+  <div class="srow"><input type="text" id="sq" placeholder="搜索本会话的聊天记录"><button id="sclose">×</button></div>
+  <div id="stabs">
+    <span class="tab on" data-cat="all">全文</span>
+    <span class="tab" data-cat="img">图片与表情包</span>
+    <span class="tab" data-cat="link">链接</span>
+    <span class="tab" data-cat="file">文件路径</span>
+  </div>
+  <div id="sresults"></div>
+</div>
+<div id="main">
+<header><span id="convtitle">Claude</span><button id="searchbtn" title="查找聊天内容">🔍</button></header>
 <div id="chat"></div>
 <div id="strip"></div>
 <div id="panel">
@@ -178,7 +329,7 @@
   <button id="send">发送</button>
 </footer>
 <div id="statusbar">
-  <span class="sbtn" id="modelbtn">默认模型</span><span class="sbtn" id="effortbtn">默认</span>
+  <span id="grouphint" style="display:none"></span><span class="sbtn" id="modelbtn">默认模型</span><span class="sbtn" id="effortbtn">默认</span>
 </div>
 <div class="popmenu" id="modelmenu">
   <div class="mtitle">模型</div>
@@ -205,6 +356,7 @@
   <div class="mi" data-effort="xhigh"><span>xHigh</span><span class="chk">✓</span></div>
   <div class="mi" data-effort="max"><span>Max</span><span class="chk">✓</span></div>
 </div>
+</div><!-- /#main -->
 
 <script>
   var chat = document.getElementById('chat');
@@ -220,6 +372,11 @@
   var curRid = null;      // 本次请求的id，停止时告诉后端杀哪个
   var curAbort = null;    // 中断前端的流式读取
   var pending = [];
+
+  /* ── 多会话 ── */
+  var SKEY = '';          // 当前会话key
+  var SESSIONS = [];      // 会话列表缓存
+  var chatCache = {};     // key → 聊天区HTML（切换时保存/恢复；刷新页面会清空）
 
   /* ── 表情数据：全部是 Unicode 字符，不带任何图片资源。
         显示成什么样，由用户自己电脑上的表情字体决定。 ── */
@@ -242,8 +399,8 @@
     });
   });
 
-  var STICKERS = [];   // [{name:'用户专用', items:['a.jpg',...]}]
-  var STK_MAP = {};    // 表情名 -> '用户专用/a.jpg'
+  var STICKERS = [];   // [{name:'共享', items:['a.jpg',...]}]
+  var STK_MAP = {};    // 表情名 -> '共享/a.jpg'
   var curTab = 0;      // 0 = 表情，1起 = 各个表情包文件夹
 
   function stickerUrl(id) { return '/sticker?f=' + encodeURIComponent(id); }
@@ -329,11 +486,20 @@
     return html;
   }
 
-  function bubble(cls, html) {
+  function bubble(cls, html, member) {
     var d = document.createElement('div');
     d.className = 'row ' + cls;
     var inner = '<div class="bubble">' + html + '</div>';
-    if (cls === 'bot') d.innerHTML = avatarHtml('claude') + inner;
+    if (cls === 'bot' && member) {
+      // 群聊：气泡挂成员自己的头像和名字。mavatar 类让 applyLook 绕开它
+      var img = member.avatar
+        ? '<img src="' + stickerUrl(member.avatar) + '" style="display:block">'
+        : '<img style="display:none">';
+      d.innerHTML = '<div class="avatar claude mavatar">' + img + '</div>' +
+        '<div class="bcol"><div class="mname">' + esc(member.name || '') + '</div>' +
+        inner + '</div>';
+    }
+    else if (cls === 'bot') d.innerHTML = avatarHtml('claude') + inner;
     else if (cls === 'user') d.innerHTML = inner + avatarHtml('user');
     else d.innerHTML = inner;
     chat.appendChild(d);
@@ -347,12 +513,43 @@
     chat.appendChild(d);
     chat.scrollTop = chat.scrollHeight;
   }
+  /* 运行状态：让用户分得清"正常干活"和"卡死了" */
+  var curStatus = '', statT0 = 0, statTimer = null, statEl = null;
+  function setStatus(s) {
+    curStatus = s;
+    paintStatus();
+  }
+  function paintStatus() {
+    if (!statEl) return;
+    var sec = Math.floor((Date.now() - statT0) / 1000);
+    statEl.textContent = curStatus + (sec >= 3 ? '（' + sec + 's）' : '…');
+  }
+  function startStatus(el) {
+    statEl = el; statT0 = Date.now();
+    setStatus('连接中');
+    statTimer = setInterval(paintStatus, 1000);
+  }
+  function stopStatus() {
+    if (statTimer) clearInterval(statTimer);
+    statTimer = null; statEl = null;
+  }
+
   function handle(ev) {
-    if (ev.kind === 'text') bubble('bot', md(ev.text));
-    else if (ev.kind === 'thinking') bubble('thought', md(ev.text));
-    else if (ev.kind === 'tool') chip('⚙ ' + ev.name);
+    var m = ev.member;   // 群聊事件带着"这是谁说的"
+    var who = m ? '「' + m.name + '」' : '';
+    if (ev.kind === 'text') { bubble('bot', md(ev.text), m); setStatus(who + '继续输出中'); }
+    else if (ev.kind === 'thinking') {
+      bubble('thought', (m ? esc(m.name) + '：' : '') + md(ev.text));
+      setStatus(who + '思考中');
+    }
+    else if (ev.kind === 'tool') {
+      chip('⚙ ' + (m ? m.name + ' · ' : '') + ev.name + (ev.detail ? ' · ' + ev.detail : ''));
+      setStatus(who + '正在用 ' + ev.name);
+    }
+    else if (ev.kind === 'session') setStatus('等待Claude响应');
+    else if (ev.kind === 'status') setStatus(ev.text);
     else if (ev.kind === 'note') chip(ev.text);
-    else if (ev.kind === 'error') bubble('bot', '<span class="err">' + md(ev.text) + '</span>');
+    else if (ev.kind === 'error') bubble('bot', '<span class="err">' + md(ev.text) + '</span>', m);
   }
 
   /* ── 表情面板 ── */
@@ -442,7 +639,7 @@
   function applyLook() {
     chat.style.backgroundImage =
       LOOK.background ? 'url("' + stickerUrl(LOOK.background) + '")' : '';
-    document.querySelectorAll('.avatar').forEach(function (a) {
+    document.querySelectorAll('.avatar:not(.mavatar)').forEach(function (a) {
       var who = a.classList.contains('claude') ? 'claude' : 'user';
       var rel = LOOK['avatar_' + who] || '';
       var img = a.querySelector('img');
@@ -458,10 +655,387 @@
     });
   }
   function loadLook() {
-    return fetch('/look').then(function (r) { return r.json(); })
-      .then(function (l) { LOOK = l || {}; applyLook(); applyPrefs(); })
+    var reqKey = SKEY;
+    return fetch('/look?key=' + encodeURIComponent(reqKey))
+      .then(function (r) { return r.json(); })
+      .then(function (l) {
+        if (SKEY !== reqKey) return;   // 迟到的旧响应，别把状态拽回上一个会话
+        LOOK = l || {};
+        if (l && l.key && !reqKey) SKEY = l.key;   // 只有空key才采纳后端回落的active
+        applyLook(); applyPrefs();
+      })
       .catch(function () { /* 桥接还没起来就算了 */ });
   }
+
+  /* ── 会话列表 ── */
+  function fmtTime(ts) {
+    if (!ts) return '';
+    var d = new Date(ts * 1000), n = new Date();
+    var hm = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+    return d.toDateString() === n.toDateString()
+      ? hm
+      : (d.getMonth() + 1) + '/' + d.getDate();
+  }
+  function renderConvs() {
+    var h = '';
+    SESSIONS.forEach(function (s) {
+      h += '<div class="conv' + (s.key === SKEY ? ' on' : '') +
+        (s.pin ? ' pinned' : '') + '" data-key="' + s.key + '">' +
+        (s.type === 'group'
+          ? '<div class="cava grp">👥</div>'
+          : '<div class="cava">' + (s.avatar
+            ? '<img src="' + stickerUrl(s.avatar) + '">' : '') + '</div>') +
+        '<div class="cmain"><div class="crow1">' +
+        '<span class="cname" title="右键可改名/置顶/导出/删除">' + esc(s.name || '未命名') + '</span>' +
+        '<span class="ctime">' + (s.pin ? '📌' : '') + fmtTime(s.ts) + '</span></div>' +
+        '<div class="clast">' + esc(s.last || '') + '</div></div></div>';
+    });
+    document.getElementById('convlist').innerHTML = h;
+    var cur = SESSIONS.filter(function (s) { return s.key === SKEY; })[0];
+    document.getElementById('convtitle').textContent = (cur && cur.name) || 'Claude';
+  }
+  function loadSessions() {
+    return fetch('/sessions').then(function (r) { return r.json(); })
+      .then(function (d) {
+        SESSIONS = (d && d.list) || [];
+        if (!SKEY) SKEY = (d && d.active) || '';
+        renderConvs();
+      }).catch(function () {});
+  }
+  function switchConv(key) {
+    if (key === SKEY || busy) return;   // 运行中不切，免得流串到别的窗口
+    closeSearch();   // 搜索结果是上一个会话的快照，跨会话点击会串号
+    snapshotChat();
+    SKEY = key;
+    fetch('/session/switch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: key })
+    }).catch(function () {});
+    chat.innerHTML = chatCache[key] || '';
+    chat.scrollTop = chat.scrollHeight;
+    if (!chatCache[key]) renderHistory(key);   // 本窗口没看过：从档案回放
+    renderConvs();
+    loadLook();
+    ta.focus();
+  }
+  document.getElementById('newconv').addEventListener('click', function () {
+    if (busy) return;
+    fetch('/session/new', { method: 'POST' })
+      .then(function (r) { return r.json(); })
+      .then(function (e) {
+        snapshotChat();
+        SKEY = e.key;
+        chat.innerHTML = '';
+        return loadSessions().then(loadLook);
+      }).catch(function () {});
+  });
+  var convlistEl = document.getElementById('convlist');
+  convlistEl.addEventListener('click', function (ev) {
+    var c = ev.target.closest('.conv');
+    if (c && !ev.target.matches('input')) switchConv(c.dataset.key);
+  });
+  // 改名：名字原地变输入框（右键菜单触发）
+  function startRename(key) {
+    var nameEl = convlistEl.querySelector('.conv[data-key="' + key + '"] .cname');
+    if (!nameEl) return;
+    var old = nameEl.textContent;
+    nameEl.innerHTML = '<input value="' + esc(old) + '">';
+    var inp = nameEl.querySelector('input');
+    inp.focus(); inp.select();
+    function commit() {
+      var v = inp.value.trim();
+      if (v && v !== old) {
+        fetch('/session/rename', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: key, name: v })
+        }).then(loadSessions).catch(function () {});
+      } else { loadSessions(); }
+    }
+    inp.addEventListener('blur', commit);
+    inp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') inp.blur();
+      if (e.key === 'Escape') { inp.value = old; inp.blur(); }
+      e.stopPropagation();
+    });
+  }
+  // 右键：改名/删除
+  var ctxmenu = document.getElementById('ctxmenu');
+  var ctxKey = '';
+  convlistEl.addEventListener('contextmenu', function (ev) {
+    var c = ev.target.closest('.conv');
+    if (!c) return;
+    ev.preventDefault();
+    ctxKey = c.dataset.key;
+    var cs = SESSIONS.filter(function (x) { return x.key === ctxKey; })[0];
+    document.getElementById('ctxpin').textContent = (cs && cs.pin) ? '取消置顶' : '置顶';
+    ctxmenu.style.left = ev.clientX + 'px';
+    ctxmenu.style.top = ev.clientY + 'px';
+    ctxmenu.style.display = 'block';
+  });
+  document.addEventListener('click', function () { ctxmenu.style.display = 'none'; });
+  document.getElementById('ctxrename').addEventListener('click', function () {
+    startRename(ctxKey);
+  });
+  document.getElementById('ctxdelete').addEventListener('click', function () {
+    if (busy) return;   // 运行中删会话会让残余流灌进别的窗口
+    var s = SESSIONS.filter(function (x) { return x.key === ctxKey; })[0];
+    if (!s) return;
+    if (!confirm('删除会话「' + (s.name || '未命名') + '」？\n（只删软壳里的列表项，Claude Code 的会话档案不动）')) return;
+    fetch('/session/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: ctxKey })
+    }).then(function () {
+      var wasCur = (SKEY === ctxKey);
+      delete chatCache[ctxKey];
+      if (wasCur) { SKEY = ''; chat.innerHTML = ''; }
+      return loadSessions().then(loadLook).then(function () {
+        if (wasCur && SKEY) renderHistory(SKEY);
+      });
+    }).catch(function () {});
+  });
+
+  /* ── 群聊 ── */
+  function curSess() {
+    return SESSIONS.filter(function (s) { return s.key === SKEY; })[0];
+  }
+  var gpanel = document.getElementById('gpanel');
+  document.getElementById('newgroup').addEventListener('click', function () {
+    if (busy) return;
+    var cands = SESSIONS.filter(function (s) { return s.type !== 'group'; });
+    if (cands.length < 2) {
+      alert('至少要有两个普通会话才能拉群。\n先用「＋新会话」多养几个不同的Claude吧。');
+      return;
+    }
+    var h = '';
+    cands.forEach(function (s) {
+      h += '<label class="gitem"><input type="checkbox" value="' + s.key + '">' +
+           '<span>' + esc(s.name || '未命名') + '</span></label>';
+    });
+    document.getElementById('glist').innerHTML = h;
+    document.getElementById('gname').value = '';
+    gpanel.classList.add('open');
+  });
+  document.getElementById('gcancel').addEventListener('click', function () {
+    gpanel.classList.remove('open');
+  });
+  document.getElementById('gok').addEventListener('click', function () {
+    if (busy) return;   // 运行中建群会把残余流灌进新群窗口
+    var keys = [];
+    gpanel.querySelectorAll('input[type=checkbox]:checked').forEach(function (c) {
+      keys.push(c.value);
+    });
+    if (keys.length < 2) { alert('至少勾选两个会话'); return; }
+    fetch('/group/new', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: document.getElementById('gname').value.trim(), srckeys: keys
+      })
+    }).then(function (r) {
+      if (!r.ok) { alert('建群失败：桥接返回 ' + r.status + '（可能有效会话不足2个）'); return null; }
+      return r.json();
+    }).then(function (g) {
+        if (!g) return;
+        gpanel.classList.remove('open');
+        closeSearch();
+        snapshotChat();
+        SKEY = g.key;
+        chat.innerHTML = '';
+        chip('群建好了。@成员名字点名发言，可以@多个人；' +
+             '不@人的话，话会记在群里，他们下次发言时能看到');
+        return loadSessions().then(loadLook);
+      }).catch(function () { alert('建群失败：桥接没响应'); });
+  });
+  // 打个 @ 就弹成员菜单
+  var atmenu = document.getElementById('atmenu');
+  ta.addEventListener('input', function () {
+    var cur = curSess();
+    if (!cur || cur.type !== 'group') { atmenu.classList.remove('open'); return; }
+    var pos = ta.selectionStart;
+    if (pos > 0 && ta.value.charAt(pos - 1) === '@') {
+      var h = '<div class="mtitle">@谁发言</div>';
+      (cur.members || []).forEach(function (mm) {
+        h += '<div class="mi" data-at="' + esc(mm.name) + '"><span>' +
+             esc(mm.name) + '</span></div>';
+      });
+      atmenu.innerHTML = h;
+      atmenu.classList.add('open');
+    } else {
+      atmenu.classList.remove('open');
+    }
+  });
+  atmenu.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var mi = e.target.closest('.mi');
+    if (mi && mi.dataset.at) {
+      insertAtCursor(mi.dataset.at + ' ');
+      atmenu.classList.remove('open');
+    }
+  });
+  document.addEventListener('click', function () { atmenu.classList.remove('open'); });
+
+  /* ── 聊天档案：回放 / 查找 / 置顶 / 导出 ── */
+  function snapshotChat() {
+    // 高亮黄框是临时的：先摘掉再存缓存，免得切回来时永久复活
+    chat.querySelectorAll('.hl').forEach(function (x) { x.classList.remove('hl'); });
+    chatCache[SKEY] = chat.innerHTML;
+  }
+  function closeSearch() {
+    spanel.classList.remove('open');
+    SEARCH_LIST = [];   // 搜索快照跟会话走，切走就作废
+  }
+  var HIST_AVATARS = {};   // 群成员名 → 头像（回放时用）
+  function recHtml(m) {
+    var h = m.text ? md(m.text) : '';
+    (m.stk || []).forEach(function (x) {
+      h += '<img class="sticker" src="' + stickerUrl(x) + '">';
+    });
+    (m.imgs || []).forEach(function (x) {
+      h += '<img src="/uploadfile?f=' + encodeURIComponent(x) + '">';
+    });
+    return h;
+  }
+  function renderRec(m, idx) {
+    var el;
+    if (m.who === 'user') el = bubble('user', recHtml(m));
+    else if (m.who === 'member') {
+      el = bubble('bot', recHtml(m),
+                  { name: m.name || '', avatar: HIST_AVATARS[m.name] || '' });
+    } else el = bubble('bot', recHtml(m));
+    if (el) el.dataset.mi = idx;
+  }
+  var histSeq = 0;
+  function renderHistory(key, full) {
+    var seq = ++histSeq;
+    return fetch('/history?key=' + encodeURIComponent(key))
+      .then(function (r) { return r.json(); })
+      .then(function (h) {
+        // 切走了 / 有更新的回放请求 / 用户已开始发消息：都不许整屏重画
+        if (key !== SKEY || seq !== histSeq || busy) return;
+        HIST_AVATARS = h.avatars || {};
+        chat.innerHTML = '';
+        var list = h.list || [];
+        var start = full ? 0 : Math.max(0, list.length - 300);
+        if (start > 0) chip('（更早的 ' + start + ' 条没展开，点🔍能搜到）');
+        for (var i = start; i < list.length; i++) renderRec(list[i], i);
+        chat.scrollTop = chat.scrollHeight;
+      }).catch(function () {});
+  }
+
+  /* 查找聊天内容 */
+  var spanel = document.getElementById('spanel');
+  var sqEl = document.getElementById('sq');
+  var SEARCH_LIST = [];
+  var sCat = 'all';
+  var LINK_RE = /https?:\/\/[^\s)"'<>\]]+/;
+  var PATH_RE = /(?:[A-Za-z]:[\\\/]|~\/)[^\s"'<>|?*]+/;
+  document.getElementById('searchbtn').addEventListener('click', function () {
+    if (busy) return;   // 流式进行中定位会整屏重画，等这轮结束
+    fetch('/history?key=' + encodeURIComponent(SKEY))
+      .then(function (r) { return r.json(); })
+      .then(function (h) {
+        SEARCH_LIST = h.list || [];
+        HIST_AVATARS = h.avatars || HIST_AVATARS;
+        sCat = 'all';
+        sqEl.value = '';
+        paintSTabs();
+        renderSearch();
+        spanel.classList.add('open');
+        sqEl.focus();
+      }).catch(function () { chip('搜索打不开：桥接没响应'); });
+  });
+  document.getElementById('sclose').addEventListener('click', function () {
+    spanel.classList.remove('open');
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && spanel.classList.contains('open')) {
+      e.preventDefault();   // 这下Esc用来关面板，不触发停止
+      spanel.classList.remove('open');
+    }
+  });
+  function paintSTabs() {
+    document.querySelectorAll('#stabs .tab').forEach(function (tb) {
+      tb.classList.toggle('on', tb.dataset.cat === sCat);
+    });
+  }
+  document.getElementById('stabs').addEventListener('click', function (e) {
+    if (e.target.dataset && e.target.dataset.cat) {
+      sCat = e.target.dataset.cat;
+      paintSTabs();
+      renderSearch();
+    }
+  });
+  sqEl.addEventListener('input', renderSearch);
+  function snippetOf(m, q) {
+    var txt = m.text || '';
+    var mm;
+    if (sCat === 'link' && (mm = txt.match(LINK_RE))) return mm[0];
+    if (sCat === 'file' && (mm = txt.match(PATH_RE))) return mm[0];
+    if (!txt) {
+      var n = (m.stk || []).length + (m.imgs || []).length;
+      return n ? '[图片/表情包 ×' + n + ']' : '';
+    }
+    if (q) {
+      var i = txt.toLowerCase().indexOf(q);
+      if (i > 20) txt = '…' + txt.slice(i - 12);
+    }
+    return txt.slice(0, 60);
+  }
+  function renderSearch() {
+    var q = sqEl.value.trim().toLowerCase();
+    var h = '', shown = 0;
+    for (var i = SEARCH_LIST.length - 1; i >= 0 && shown < 200; i--) {
+      var m = SEARCH_LIST[i];
+      var txt = m.text || '';
+      if (sCat === 'img' &&
+          !((m.imgs && m.imgs.length) || (m.stk && m.stk.length) ||
+            /\[\[(?:表情|sticker)/.test(txt))) continue;
+      if (sCat === 'link' && !LINK_RE.test(txt)) continue;
+      if (sCat === 'file' && !PATH_RE.test(txt)) continue;
+      if (q && txt.toLowerCase().indexOf(q) < 0) continue;
+      h += '<div class="sitem" data-mi="' + i + '">' +
+           '<div class="srow1"><b>' + esc(m.name || '?') + '</b>' +
+           '<span>' + fmtTime(m.ts) + '</span></div>' +
+           '<div class="ssnip">' + esc(snippetOf(m, q)) + '</div></div>';
+      shown++;
+    }
+    document.getElementById('sresults').innerHTML =
+      h || '<div class="empty">没搜到。只搜落了档的消息——留档从档案功能上线那天开始。</div>';
+  }
+  document.getElementById('sresults').addEventListener('click', function (e) {
+    var it = e.target.closest('.sitem');
+    if (!it) return;
+    var idx = it.dataset.mi;
+    spanel.classList.remove('open');
+    function flash() {
+      var el = chat.querySelector('[data-mi="' + idx + '"]');
+      if (!el) return;
+      el.scrollIntoView({ block: 'center' });
+      el.classList.add('hl');
+      setTimeout(function () { el.classList.remove('hl'); }, 2200);
+    }
+    if (chat.querySelector('[data-mi="' + idx + '"]')) flash();
+    else if (!busy) renderHistory(SKEY, true).then(flash);   // 不在视图里：全量重放再跳
+  });
+
+  /* 置顶 / 导出 */
+  document.getElementById('ctxpin').addEventListener('click', function () {
+    var s = SESSIONS.filter(function (x) { return x.key === ctxKey; })[0];
+    if (!s) return;
+    fetch('/session/pin', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: ctxKey, pin: !s.pin })
+    }).then(loadSessions).catch(function () {});
+  });
+  document.getElementById('ctxexport').addEventListener('click', function () {
+    fetch('/export', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: ctxKey })
+    }).then(function (r) {
+      if (!r.ok) { chip('导出失败：桥接返回 ' + r.status); return null; }
+      return r.json();
+    }).then(function (j) { if (j) chip('聊天记录已导出：' + j.path); })
+      .catch(function () { chip('导出失败：桥接没响应'); });
+  });
 
   /* ── 模型 / effort 切换 ── */
   var modelbtn = document.getElementById('modelbtn');
@@ -477,6 +1051,17 @@
   var EFFORT_NAMES = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'xHigh', max: 'Max' };
 
   function applyPrefs() {
+    var cur = curSess();
+    var isGrp = !!(cur && cur.type === 'group');
+    // 群里每个成员各用各的模型（跟单聊联系人走），整群没有统一模型可切
+    modelbtn.style.display = isGrp ? 'none' : '';
+    effortbtn.style.display = isGrp ? 'none' : '';
+    var gh = document.getElementById('grouphint');
+    if (isGrp) {
+      gh.style.display = '';
+      gh.textContent = '成员：' + (cur.members || []).map(function (x) { return x.name; })
+        .join('、') + '（@名字 点名发言）';
+    } else { gh.style.display = 'none'; }
     var m = LOOK.model || '', e = LOOK.effort || '';
     modelbtn.textContent = m ? (MODEL_NAMES[m] || m) : '默认模型';
     effortbtn.textContent = e ? EFFORT_NAMES[e] : '默认';
@@ -493,7 +1078,7 @@
     document.getElementById('morewrap').style.display = 'none';
   }
   function setPref(key, val, label) {
-    var body = {};
+    var body = { key: SKEY };   // 模型/effort是每个会话自己的
     body[key] = val;
     fetch('/prefs', {
       method: 'POST',
@@ -578,7 +1163,10 @@
     }
   });
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+    if (e.key === 'Escape' && panel.classList.contains('open')) {
+      e.preventDefault();   // 这下Esc用来关表情面板，不触发停止
+      closePanel();
+    }
   });
 
   /* ── 待发图片 ── */
@@ -667,7 +1255,8 @@
       uhtml += '<img class="sticker" src="' + stickerUrl(id) + '">';
     });
     bubble('user', uhtml);
-    var typing = bubble('bot', '<span class="dots">正在思考…</span>');
+    var typing = bubble('bot', '<span class="dots"></span>');
+    startStatus(typing.querySelector('.dots'));
 
     try {
       var paths = [];
@@ -681,7 +1270,7 @@
       var res = await fetch('/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: text, images: paths, stickers: stks, rid: curRid }),
+        body: JSON.stringify({ text: text, images: paths, stickers: stks, rid: curRid, skey: SKEY }),
         signal: curAbort.signal
       });
       var reader = res.body.getReader();
@@ -708,10 +1297,12 @@
         bubble('bot', '<span class="err">连接断了：' + esc(String(e)) + '</span>');
       }
     }
+    stopStatus();
     typing.remove();
     curRid = null; curAbort = null;
     setBusy(false);
-    loadLook();   // Claude 这轮要是换了头像/背景，回复一结束就生效
+    loadLook();       // Claude 这轮要是换了头像/背景，回复一结束就生效
+    loadSessions();   // 会话名/摘要/时间也可能变了
     ta.focus();
   }
 
@@ -720,20 +1311,17 @@
   });
   // Esc 也能停
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && busy) { e.preventDefault(); stopRun(); }
+    if (e.key === 'Escape' && busy && !e.defaultPrevented) {
+      e.preventDefault();
+      stopRun();
+    }
   });
   ta.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   });
-  document.getElementById('newbtn').addEventListener('click', function () {
-    fetch('/new', { method: 'POST' }).then(function () {
-      chat.innerHTML = '';
-      bubble('bot', '新对话开始了。');
-      ta.focus();
-    });
-  });
-
   loadStickers();   // 先把表情包名字表拉下来，Claude 一上来就发表情也认得出
-  loadLook();       // 恢复上次的头像和聊天背景
+  loadSessions().then(loadLook).then(function () {
+    if (SKEY) renderHistory(SKEY);   // 重开窗口不丢：从档案回放
+  });
   ta.focus();
 </script>
