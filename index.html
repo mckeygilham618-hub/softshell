@@ -123,6 +123,41 @@
   #send:disabled { opacity: .45; cursor: default; }
   #send.stopping { background: #8a8a8a; }
   .dots { color: #999; font-size: 13px; }
+
+  /* ── 模型/effort 状态条与弹出菜单（照抄桌面版样式）── */
+  #statusbar {
+    flex: none; background: #f7f7f7; padding: 1px 10px 6px;
+    text-align: right; font-size: 12px; color: #8a8a8a; user-select: none;
+  }
+  #statusbar .sbtn { cursor: pointer; padding: 2px 7px; border-radius: 4px; }
+  #statusbar .sbtn:hover { background: #ececec; color: #333; }
+  .popmenu {
+    position: fixed; right: 10px; bottom: 36px; background: #fff;
+    border-radius: 10px; box-shadow: 0 4px 24px rgba(0,0,0,.16);
+    padding: 6px; min-width: 178px; display: none; z-index: 50;
+    font-size: 14px; color: #1a1a1a; text-align: left;
+  }
+  .popmenu.open { display: block; }
+  .mtitle { font-size: 12px; color: #999; padding: 4px 12px 2px; font-weight: 600; }
+  .mi {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 7px 12px; border-radius: 6px; cursor: pointer; gap: 16px;
+  }
+  .mi:hover { background: #f2f2f2; }
+  .mi .chk { color: #07c160; visibility: hidden; font-weight: 700; }
+  .mi.on .chk { visibility: visible; }
+  .mi .num { color: #bbb; font-size: 12px; }
+  /* ── 气泡内的 markdown：表格、标题、列表 ── */
+  .tblwrap { overflow-x: auto; max-width: 100%; }
+  .bubble table { border-collapse: collapse; font-size: 13px; margin: 6px 0; }
+  .bubble th, .bubble td {
+    border: 1px solid #e2e2e2; padding: 4px 9px; text-align: left;
+    white-space: nowrap;
+  }
+  .bubble th { background: #f6f6f6; font-weight: 600; }
+  .mdh { font-weight: 700; margin: 8px 0 3px; }
+  .bubble ul { margin: 4px 0 4px 18px; padding: 0; }
+  .bubble li { margin: 2px 0; }
 </style>
 
 <header>
@@ -142,6 +177,34 @@
   <textarea id="input" placeholder="说话（Enter发送，Shift+Enter换行，Ctrl+V可贴图）"></textarea>
   <button id="send">发送</button>
 </footer>
+<div id="statusbar">
+  <span class="sbtn" id="modelbtn">默认模型</span><span class="sbtn" id="effortbtn">默认</span>
+</div>
+<div class="popmenu" id="modelmenu">
+  <div class="mtitle">模型</div>
+  <div class="mi" data-model=""><span>默认（跟随 CLI 设置）</span><span class="chk">✓</span></div>
+  <div class="mi" data-model="fable"><span>Fable 5</span><span><span class="chk">✓ </span><span class="num">1</span></span></div>
+  <div class="mi" data-model="opus"><span>Opus 5</span><span><span class="chk">✓ </span><span class="num">2</span></span></div>
+  <div class="mi" data-model="sonnet"><span>Sonnet 5</span><span><span class="chk">✓ </span><span class="num">3</span></span></div>
+  <div class="mi" data-model="haiku"><span>Haiku 4.5</span><span><span class="chk">✓ </span><span class="num">4</span></span></div>
+  <div class="mi" id="moretoggle"><span>更多模型</span><span>›</span></div>
+  <div id="morewrap" style="display:none">
+    <div class="mi" data-model="claude-opus-4-8"><span>Opus 4.8</span><span class="chk">✓</span></div>
+    <div class="mi" data-model="claude-opus-4-7"><span>Opus 4.7</span><span class="chk">✓</span></div>
+    <div class="mi" data-model="claude-opus-4-6"><span>Opus 4.6</span><span class="chk">✓</span></div>
+    <div class="mi" data-model="claude-sonnet-4-6"><span>Sonnet 4.6</span><span class="chk">✓</span></div>
+    <div class="mi" data-model="opusplan"><span>OpusPlan<span class="num">（Opus规划+Sonnet执行）</span></span><span class="chk">✓</span></div>
+  </div>
+</div>
+<div class="popmenu" id="effortmenu">
+  <div class="mtitle">Effort</div>
+  <div class="mi" data-effort=""><span>默认（跟随 CLI 设置）</span><span class="chk">✓</span></div>
+  <div class="mi" data-effort="low"><span>Low</span><span class="chk">✓</span></div>
+  <div class="mi" data-effort="medium"><span>Medium</span><span class="chk">✓</span></div>
+  <div class="mi" data-effort="high"><span>High</span><span class="chk">✓</span></div>
+  <div class="mi" data-effort="xhigh"><span>xHigh</span><span class="chk">✓</span></div>
+  <div class="mi" data-effort="max"><span>Max</span><span class="chk">✓</span></div>
+</div>
 
 <script>
   var chat = document.getElementById('chat');
@@ -212,8 +275,7 @@
         });
         t = t.replace(/`([^`\n]+)`/g, '<code>$1</code>');
         t = t.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
-        t = t.replace(/\n/g, '<br>');
-        html += t;
+        html += mdBlocks(t);
       }
     }
     return html;
@@ -226,6 +288,47 @@
       : '<img style="display:none">';
     return '<div class="avatar ' + who + '">' + img + '</div>';
   }
+  /* 逐行解析：表格、标题、无序列表。输入已转义、已做完行内替换。 */
+  function mdBlocks(t) {
+    var lines = t.split('\n');
+    var html = '', listBuf = [], tblBuf = [];
+    function flushList() {
+      if (!listBuf.length) return;
+      html += '<ul>' + listBuf.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</ul>';
+      listBuf = [];
+    }
+    function flushTbl() {
+      if (!tblBuf.length) return;
+      if (tblBuf.length < 2) {           // 孤行竖线不是表格，原样放回
+        html += tblBuf.join('<br>') + '<br>';
+        tblBuf = [];
+        return;
+      }
+      var rows = tblBuf.map(function (l) {
+        return l.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|');
+      });
+      var start = /^[\s|:-]+$/.test(tblBuf[1]) ? 2 : 1;   // 有分隔行就跳过
+      var h = '<div class="tblwrap"><table><tr>' +
+        rows[0].map(function (c) { return '<th>' + c.trim() + '</th>'; }).join('') + '</tr>';
+      for (var r = start; r < rows.length; r++) {
+        h += '<tr>' + rows[r].map(function (c) { return '<td>' + c.trim() + '</td>'; }).join('') + '</tr>';
+      }
+      html += h + '</table></div>';
+      tblBuf = [];
+    }
+    for (var i = 0; i < lines.length; i++) {
+      var ln = lines[i], m;
+      if (/^\s*\|.*\|\s*$/.test(ln)) { flushList(); tblBuf.push(ln); continue; }
+      flushTbl();
+      if (m = ln.match(/^#{1,4}\s+(.*)$/)) { flushList(); html += '<div class="mdh">' + m[1] + '</div>'; continue; }
+      if (m = ln.match(/^\s*[-*•]\s+(.*)$/)) { listBuf.push(m[1]); continue; }
+      flushList();
+      html += ln + (i < lines.length - 1 ? '<br>' : '');
+    }
+    flushList(); flushTbl();
+    return html;
+  }
+
   function bubble(cls, html) {
     var d = document.createElement('div');
     d.className = 'row ' + cls;
@@ -356,9 +459,94 @@
   }
   function loadLook() {
     return fetch('/look').then(function (r) { return r.json(); })
-      .then(function (l) { LOOK = l || {}; applyLook(); })
+      .then(function (l) { LOOK = l || {}; applyLook(); applyPrefs(); })
       .catch(function () { /* 桥接还没起来就算了 */ });
   }
+
+  /* ── 模型 / effort 切换 ── */
+  var modelbtn = document.getElementById('modelbtn');
+  var effortbtn = document.getElementById('effortbtn');
+  var modelmenu = document.getElementById('modelmenu');
+  var effortmenu = document.getElementById('effortmenu');
+  var MODEL_NAMES = {
+    fable: 'Fable 5', opus: 'Opus 5', sonnet: 'Sonnet 5', haiku: 'Haiku 4.5',
+    'claude-opus-4-8': 'Opus 4.8', 'claude-opus-4-7': 'Opus 4.7',
+    'claude-opus-4-6': 'Opus 4.6', 'claude-sonnet-4-6': 'Sonnet 4.6',
+    opusplan: 'OpusPlan'
+  };
+  var EFFORT_NAMES = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'xHigh', max: 'Max' };
+
+  function applyPrefs() {
+    var m = LOOK.model || '', e = LOOK.effort || '';
+    modelbtn.textContent = m ? (MODEL_NAMES[m] || m) : '默认模型';
+    effortbtn.textContent = e ? EFFORT_NAMES[e] : '默认';
+    modelmenu.querySelectorAll('.mi[data-model]').forEach(function (mi) {
+      mi.classList.toggle('on', mi.dataset.model === m);
+    });
+    effortmenu.querySelectorAll('.mi[data-effort]').forEach(function (mi) {
+      mi.classList.toggle('on', mi.dataset.effort === e);
+    });
+  }
+  function closeMenus() {
+    modelmenu.classList.remove('open');
+    effortmenu.classList.remove('open');
+    document.getElementById('morewrap').style.display = 'none';
+  }
+  function setPref(key, val, label) {
+    var body = {};
+    body[key] = val;
+    fetch('/prefs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      if (!r.ok) { chip('没切成：' + (key === 'model' ? '型号名' : 'effort') + '不合法'); return; }
+      chip('已切换到 ' + label + '，下一条消息生效');
+      loadLook();
+    }).catch(function () { chip('没切成：桥接没响应'); });
+    closeMenus();
+  }
+  modelbtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    effortmenu.classList.remove('open');
+    modelmenu.classList.toggle('open');
+  });
+  effortbtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    modelmenu.classList.remove('open');
+    effortmenu.classList.toggle('open');
+  });
+  modelmenu.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var mi = e.target.closest('.mi');
+    if (!mi) return;
+    if (mi.id === 'moretoggle') {
+      var mw = document.getElementById('morewrap');
+      mw.style.display = mw.style.display === 'block' ? 'none' : 'block';
+      return;
+    }
+    if (mi.dataset.model !== undefined) {
+      setPref('model', mi.dataset.model,
+              mi.dataset.model ? (MODEL_NAMES[mi.dataset.model] || mi.dataset.model) : '默认模型');
+    }
+  });
+  effortmenu.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var mi = e.target.closest('.mi');
+    if (mi && mi.dataset.effort !== undefined) {
+      setPref('effort', mi.dataset.effort,
+              mi.dataset.effort ? 'Effort ' + EFFORT_NAMES[mi.dataset.effort] : '默认 effort');
+    }
+  });
+  document.addEventListener('click', closeMenus);
+  document.addEventListener('keydown', function (e) {
+    if (!modelmenu.classList.contains('open')) return;
+    var map = { '1': 'fable', '2': 'opus', '3': 'sonnet', '4': 'haiku' };
+    if (map[e.key]) {
+      e.preventDefault();
+      setPref('model', map[e.key], MODEL_NAMES[map[e.key]]);
+    }
+  });
 
   function openPanel() {
     loadStickers().then(function () { renderTabs(); renderGrid(); });

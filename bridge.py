@@ -75,8 +75,17 @@ IMG_TYPES = {
 }
 
 # 外观状态：当前头像、聊天背景用的是哪张图。Claude 改这个文件就等于换装。
+# model / effort 也存在这里：用户在界面上切，下一条消息生效。
 STATE_FILE = os.path.join(DIR, "state.json")
 LOOK_KEYS = ("avatar_claude", "avatar_user", "background")
+EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
+
+def valid_model(s):
+    """别名(fable/opus/opusplan...)、完整型号名(claude-opus-4-6)，
+    或带百万上下文后缀的写法(opus[1m])。挡住奇怪字符，
+    防止 state.json 里的值变成别的命令行参数。"""
+    return bool(isinstance(s, str) and re.match(r"^[A-Za-z0-9][A-Za-z0-9.\[\]-]{0,63}$", s))
 
 
 def load_state():
@@ -105,11 +114,19 @@ def look_state_line():
     ))
 
 
+# 被测件（软壳里的Claude）提的折中方案：完整说明只注入一次；
+# 外观状态变过的那一轮，追加一行约20个token的状态——它的"回读通道"。
+# 绝大多数轮次一个字不加。
+LAST_LOOK_SIG = None
+
+
 # 每段新对话的第一条消息带上这段。不带的话，新会话里的Claude不知道自己也能发表情包、换头像。
 # 这里故意不列出文件夹里有哪些图：判断权交给模型，它用不上就不必花token去翻。
 def intro_text():
     return (
-        "(这是「Softshell」窗口。" + STICKER_DIR + " 里有表情包，如果你认为需要发表情包，"
+        "(这是「Softshell」窗口，按聊天软件的方式显示：支持粗体、代码块、表格和列表，"
+        "但气泡里更适合短句分段的聊天式表达，长篇标题层级不好读。\n"
+        + STICKER_DIR + " 里有表情包，如果你认为需要发表情包，"
         "可以去翻看那个文件夹，以写 [[表情:xxx]] 来输出表情包给用户，"
         "xxx 是图片的文件名（带不带后缀都认）。直接打 Unicode emoji 也可以。"
         "如果文件夹里没有你想要的那个表情，你可以用文字写出自己的表情和动作，像RP那样；"
@@ -284,6 +301,10 @@ class Handler(BaseHTTPRequestHandler):
             for k in LOOK_KEYS:
                 rel = st.get(k) or ""
                 out[k] = rel if sticker_path(rel) else ""
+            mdl = st.get("model") or ""
+            out["model"] = mdl if valid_model(mdl) else ""
+            eff = st.get("effort") or ""
+            out["effort"] = eff if eff in EFFORTS else ""
             self._send_bytes(
                 json.dumps(out, ensure_ascii=False).encode("utf-8"),
                 "application/json; charset=utf-8",
@@ -341,6 +362,34 @@ class Handler(BaseHTTPRequestHandler):
             save_sid("")
             self._send_bytes(b"ok", "text/plain")
             return
+        if self.path == "/prefs":
+            n = int(self.headers.get("Content-Length", 0))
+            try:
+                p = json.loads(self.rfile.read(n).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                self.send_error(400)
+                return
+            st = load_state()
+            if "model" in p:
+                m = str(p.get("model") or "")
+                if m and not valid_model(m):
+                    self.send_error(400)
+                    return
+                st["model"] = m
+            if "effort" in p:
+                e = str(p.get("effort") or "")
+                if e and e not in EFFORTS:
+                    self.send_error(400)
+                    return
+                st["effort"] = e
+            try:
+                with open(STATE_FILE, "w", encoding="utf-8") as f:
+                    json.dump(st, f, ensure_ascii=False, indent=1)
+            except OSError:
+                self.send_error(500)
+                return
+            self._send_bytes(b"ok", "text/plain")
+            return
         if self.path.startswith("/upload"):
             self._handle_upload()
             return
@@ -371,8 +420,15 @@ class Handler(BaseHTTPRequestHandler):
             what = "表情包" if n_stickers == len(images) else "图片"
             text = (text or ("我发了一个" + what + "。")) + \
                 "\n\n(我发了" + what + "，请先用Read工具查看这些文件再回答: " + " ; ".join(images) + ")"
+        global LAST_LOOK_SIG
+        cur_sig = look_state_line()
         if not sid:
             text += "\n\n" + intro_text()
+        elif cur_sig != LAST_LOOK_SIG:
+            # 外观变了（多半是Claude自己上一轮改的）：给它一行回读确认。
+            # 桥接刚重启时也会注入一次，保证停机期间的变化不被错过。
+            text += "\n\n(" + cur_sig + ")"
+        LAST_LOOK_SIG = cur_sig
 
         self.send_response(200)
         self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
@@ -388,6 +444,13 @@ class Handler(BaseHTTPRequestHandler):
 
         base = [CLAUDE, "-p", text, "--output-format", "stream-json", "--verbose",
                 "--dangerously-skip-permissions"]
+        st = load_state()
+        mdl = st.get("model") or ""
+        if valid_model(mdl):
+            base += ["--model", mdl]
+        eff = st.get("effort") or ""
+        if eff in EFFORTS:
+            base += ["--effort", eff]
         attempt = 0
         while True:
             attempt += 1
