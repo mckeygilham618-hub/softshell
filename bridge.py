@@ -94,20 +94,24 @@ def valid_model(s):
 
 
 def look_state_line(skey):
-    """给 Claude 看的当前外观描述。XX 直接取表情包文件名。"""
-    st = load_look_of(skey)
+    """给 Claude 看的当前外观描述 + 外观文件写错时的纠错提示。"""
+    p = look_path(skey)
+    st, warns = normalize_look(_read_json(p) if p else {})
 
     def nm(key, default):
-        p = sticker_path(st.get(key) or "")
-        if not p:
+        sp = sticker_path(st.get(key) or "")
+        if not sp:
             return default
-        return "「" + os.path.splitext(os.path.basename(p))[0] + "」"
+        return "「" + os.path.splitext(os.path.basename(sp))[0] + "」"
 
-    return ("当前外观状态：你是%s头像，用户是%s头像，聊天背景是%s。" % (
+    line = ("当前外观状态：你是%s头像，用户是%s头像，聊天背景是%s。" % (
         nm("avatar_claude", "默认白色方块"),
         nm("avatar_user", "默认绿色方块"),
         nm("background", "默认素色"),
     ))
+    if warns:
+        line += "⚠你写的外观文件有问题：" + "；".join(warns) + "。"
+    return line
 
 
 # 被测件（软壳里的Claude）提的折中方案：完整说明只注入一次；
@@ -124,7 +128,9 @@ def intro_text(skey):
         "但气泡里更适合短句分段的聊天式表达，长篇标题层级不好读。\n"
         + STICKER_DIR + " 里有表情包，如果你认为需要发表情包，"
         "可以去翻看那个文件夹，以写 [[表情:xxx]] 来输出表情包给用户，"
-        "xxx 是图片的文件名（带不带后缀都认）。直接打 Unicode emoji 也可以。"
+        "xxx 是图片的文件名（带不带后缀都认）。表情包请单独占一行发送："
+        "那样它会像微信一样显示成独立的一条表情消息，不带文字气泡框；"
+        "夹在句子中间写则嵌在文字里。直接打 Unicode emoji 也可以。"
         "如果文件夹里没有你想要的那个表情，你可以用文字写出自己的表情和动作，像RP那样；"
         "也可以直接跟用户说，能不能在表情包文件夹里给你加一个XX表情，"
         "或者请用户往里加头像图、聊天背景图。\n"
@@ -213,7 +219,7 @@ def look_path(key):
 
 def load_look_of(key):
     p = look_path(key)
-    return _read_json(p) if p else {}
+    return normalize_look(_read_json(p))[0] if p else {}
 
 
 def sync_legacy_state(key):
@@ -411,7 +417,8 @@ def group_intro(member_name, all_names):
         "下面的群聊转录里，「用户」是人类的发言，其他名字是别的成员。"
         "请以「" + member_name + "」的身份直接发言，不要在开头带自己的名字，"
         "你说的话会转达给群里所有人。支持粗体、代码块、表格，但更适合聊天式短句。\n"
-        + STICKER_DIR + " 里有表情包，需要时可写 [[表情:文件名]] 发送，直接打emoji也行。"
+        + STICKER_DIR + " 里有表情包，需要时可写 [[表情:文件名]] 发送"
+        "（单独占一行，会显示成独立的一条表情消息），直接打emoji也行。"
         "群里不改头像背景，换装请让用户去你的单聊窗口找你。)"
     )
 
@@ -478,6 +485,51 @@ def sticker_path(rel):
     if not os.path.isfile(p):
         return None
     return p
+
+
+# ── 外观文件容错：被测件反馈，键名手滑写错时用户只看到"没反应" ──
+LOOK_ALIASES = {
+    "avatar_claude": ("avatar_ai", "avatar_bot", "avatar_assistant", "claude_avatar", "avatar"),
+    "avatar_user": ("avatar_me", "avatar_human", "user_avatar", "avatar_owner"),
+    "background": ("bg", "wallpaper", "background_image", "chat_background", "背景"),
+}
+_LOOK_CANON = {}
+for _k, _als in LOOK_ALIASES.items():
+    _LOOK_CANON[_k] = _k
+    for _a in _als:
+        _LOOK_CANON[_a] = _k
+
+
+def find_sticker_by_name(name):
+    """裸文件名（没带子文件夹前缀）时，全库找同名图"""
+    name = os.path.basename(str(name).replace("\\", "/"))
+    bare = os.path.splitext(name)[0]
+    for grp in sticker_groups():
+        for fn in grp["items"]:
+            if fn == name or os.path.splitext(fn)[0] == bare:
+                return grp["name"] + "/" + fn
+    return None
+
+
+def normalize_look(raw):
+    """键名别名归一 + 裸文件名解析。返回 (归一后的dict, 告警列表)。
+    告警会顺着外观回读通道带给Claude，它下一轮自己就会改。"""
+    out, warns = {}, []
+    for k, v in (raw or {}).items():
+        ck = _LOOK_CANON.get(str(k).strip().lower())
+        if not ck:
+            warns.append("认不出键名「%s」，有效键: avatar_claude / avatar_user / background" % k)
+            continue
+        if v:
+            out[ck] = str(v).replace("\\", "/")
+    for ck in list(out):
+        if not sticker_path(out[ck]):
+            hit = find_sticker_by_name(out[ck])
+            if hit:
+                out[ck] = hit
+            else:
+                warns.append("%s 指向的图找不到: %s" % (ck, out[ck]))
+    return out, warns
 
 
 # 工具调用的一行摘要：模型自己在这些字段里写了"这一步在干什么"，

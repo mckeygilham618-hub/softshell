@@ -99,6 +99,10 @@
   .bubble img { max-width: 220px; border-radius: 6px; display: block; margin: 4px 0; }
   /* 表情包气泡：不切图，整张缩进去 */
   .bubble img.sticker { max-width: 140px; max-height: 140px; object-fit: contain; }
+  /* 微信式独立表情消息：无白框，背景全露 */
+  .bubble.naked, .user .bubble.naked {
+    background: transparent; box-shadow: none; padding: 0;
+  }
   .chip { text-align: center; color: #b0b0b0; font-size: 12px; margin: 5px 0; }
   .err { color: #d64541; }
   pre {
@@ -534,10 +538,34 @@
     statTimer = null; statEl = null;
   }
 
+  /* 单独成行的 [[表情:xxx]] → 微信式独立表情消息（裸图无框） */
+  var STK_LINE = /^\s*\[\[(?:表情|sticker)[:：]\s*([^\]]+?)\s*\]\]\s*$/;
+  function nakedSticker(cls, id, member) {
+    var d = bubble(cls, '<img class="sticker" src="' + stickerUrl(id) + '">', member);
+    d.querySelector('.bubble').classList.add('naked');
+    return d;
+  }
+  function botSay(text, member) {
+    var rows = [], buf = [];
+    function flush() {
+      var t = buf.join('\n');
+      if (t.trim()) rows.push(bubble('bot', md(t), member));
+      buf = [];
+    }
+    String(text).split('\n').forEach(function (ln) {
+      var mm = ln.match(STK_LINE);
+      var id = mm && STK_MAP[mm[1]];
+      if (id) { flush(); rows.push(nakedSticker('bot', id, member)); }
+      else buf.push(ln);
+    });
+    flush();
+    return rows;
+  }
+
   function handle(ev) {
     var m = ev.member;   // 群聊事件带着"这是谁说的"
     var who = m ? '「' + m.name + '」' : '';
-    if (ev.kind === 'text') { bubble('bot', md(ev.text), m); setStatus(who + '继续输出中'); }
+    if (ev.kind === 'text') { botSay(ev.text, m); setStatus(who + '继续输出中'); }
     else if (ev.kind === 'thinking') {
       bubble('thought', (m ? esc(m.name) + '：' : '') + md(ev.text));
       setStatus(who + '思考中');
@@ -884,24 +912,26 @@
     SEARCH_LIST = [];   // 搜索快照跟会话走，切走就作废
   }
   var HIST_AVATARS = {};   // 群成员名 → 头像（回放时用）
-  function recHtml(m) {
+  function recHtml(m) {   // 文字+上传图（表情包另行独立成条）
     var h = m.text ? md(m.text) : '';
-    (m.stk || []).forEach(function (x) {
-      h += '<img class="sticker" src="' + stickerUrl(x) + '">';
-    });
     (m.imgs || []).forEach(function (x) {
       h += '<img src="/uploadfile?f=' + encodeURIComponent(x) + '">';
     });
     return h;
   }
   function renderRec(m, idx) {
-    var el;
-    if (m.who === 'user') el = bubble('user', recHtml(m));
-    else if (m.who === 'member') {
-      el = bubble('bot', recHtml(m),
-                  { name: m.name || '', avatar: HIST_AVATARS[m.name] || '' });
-    } else el = bubble('bot', recHtml(m));
-    if (el) el.dataset.mi = idx;
+    var rows = [];
+    if (m.who === 'user') {
+      (m.stk || []).forEach(function (x) { rows.push(nakedSticker('user', x)); });
+      var h = recHtml(m);
+      if (h) rows.push(bubble('user', h));
+    } else {
+      var mem = m.who === 'member'
+        ? { name: m.name || '', avatar: HIST_AVATARS[m.name] || '' } : null;
+      rows = botSay(m.text || '', mem);
+      (m.stk || []).forEach(function (x) { rows.push(nakedSticker('bot', x, mem)); });
+    }
+    rows.forEach(function (el) { if (el) el.dataset.mi = idx; });
   }
   var histSeq = 0;
   function renderHistory(key, full) {
@@ -1249,12 +1279,10 @@
     curAbort = new AbortController();
     setBusy(true);
 
+    stks.forEach(function (id) { nakedSticker('user', id); });   // 表情包独立成条
     var uhtml = md(text);
     imgs.forEach(function (p) { uhtml += '<img src="' + p.url + '">'; });
-    stks.forEach(function (id) {
-      uhtml += '<img class="sticker" src="' + stickerUrl(id) + '">';
-    });
-    bubble('user', uhtml);
+    if (text || imgs.length) bubble('user', uhtml);
     var typing = bubble('bot', '<span class="dots"></span>');
     startStatus(typing.querySelector('.dots'));
 
