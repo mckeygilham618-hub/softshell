@@ -408,6 +408,17 @@
   var curTab = 0;      // 0 = 表情，1起 = 各个表情包文件夹
 
   function stickerUrl(id) { return '/sticker?f=' + encodeURIComponent(id); }
+  function stkResolve(name) {
+    if (STK_MAP[name]) return STK_MAP[name];
+    // 模糊救援：模型爱写短情绪词（"无奈"→"无奈-扶额"）。前缀优先，其次互相包含
+    var bare = Object.keys(STK_MAP).filter(function (k) {
+      return k.indexOf('/') < 0 && k.indexOf('.') < 0;
+    });
+    var hit = bare.filter(function (k) { return k.indexOf(name) === 0; });
+    if (!hit.length) hit = bare.filter(function (k) { return k.indexOf(name) >= 0; });
+    if (!hit.length) hit = bare.filter(function (k) { return name.indexOf(k) >= 0; });
+    return hit.length ? STK_MAP[hit[0]] : null;
+  }
 
   function esc(s) {
     // 也转义引号：文件名会被塞进 title/alt 属性里
@@ -429,10 +440,12 @@
         html += '<pre>' + esc(code) + '</pre>';
       } else {
         var t = esc(p);
-        // Claude 写 [[表情:名字]] 就渲染成那张表情包；认不出的名字原样留着，好排查
+        // Claude 写 [[表情:名字]] 就渲染成那张表情包；找不到的模糊救援一把，
+        // 还认不出就体面降级成 [名字]——像故意打的文字表情，不裸露机械语法
         t = t.replace(/\[\[(?:表情|sticker)[:：]\s*([^\]]+?)\s*\]\]/g, function (m, name) {
-          var id = STK_MAP[unesc(name)];
-          return id ? '<img class="sticker" src="' + stickerUrl(id) + '" alt="' + name + '">' : m;
+          var id = stkResolve(unesc(name));
+          return id ? '<img class="sticker" src="' + stickerUrl(id) + '" alt="' + name + '">'
+                    : '[' + name + ']';
         });
         t = t.replace(/`([^`\n]+)`/g, '<code>$1</code>');
         t = t.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
@@ -554,7 +567,7 @@
     }
     String(text).split('\n').forEach(function (ln) {
       var mm = ln.match(STK_LINE);
-      var id = mm && STK_MAP[mm[1]];
+      var id = mm && stkResolve(mm[1]);
       if (id) { flush(); rows.push(nakedSticker('bot', id, member)); }
       else buf.push(ln);
     });

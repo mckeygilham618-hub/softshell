@@ -128,7 +128,9 @@ def intro_text(skey):
         "但气泡里更适合短句分段的聊天式表达，长篇标题层级不好读。\n"
         + STICKER_DIR + " 里有表情包，如果你认为需要发表情包，"
         "可以去翻看那个文件夹，以写 [[表情:xxx]] 来输出表情包给用户，"
-        "xxx 是图片的文件名（带不带后缀都认）。表情包请单独占一行发送："
+        "xxx 是图片的文件名（带不带后缀都认）。"
+        "只写你翻看后确认存在的文件名——没翻过就别猜名字，猜错会原样穿帮成文字。"
+        "表情包请单独占一行发送："
         "那样它会像微信一样显示成独立的一条表情消息，不带文字气泡框；"
         "夹在句子中间写则嵌在文字里。直接打 Unicode emoji 也可以。"
         "如果文件夹里没有你想要的那个表情，你可以用文字写出自己的表情和动作，像RP那样；"
@@ -418,7 +420,8 @@ def group_intro(member_name, all_names):
         "请以「" + member_name + "」的身份直接发言，不要在开头带自己的名字，"
         "你说的话会转达给群里所有人。支持粗体、代码块、表格，但更适合聊天式短句。\n"
         + STICKER_DIR + " 里有表情包，需要时可写 [[表情:文件名]] 发送"
-        "（单独占一行，会显示成独立的一条表情消息），直接打emoji也行。"
+        "（单独占一行，会显示成独立的一条表情消息；只写翻看后确认存在的文件名，"
+        "猜错会穿帮成文字），直接打emoji也行。"
         "群里不改头像背景，换装请让用户去你的单聊窗口找你。)"
     )
 
@@ -511,6 +514,24 @@ def find_sticker_by_name(name):
     return None
 
 
+def fuzzy_sticker(name):
+    """模糊救援：模型爱写短情绪词（"无奈"→"无奈-扶额.jpg"）。
+    前缀优先，其次互相包含，取第一个命中。"""
+    name = str(name).strip()
+    if not name:
+        return None
+    pre, sub = [], []
+    for grp in sticker_groups():
+        for fn in grp["items"]:
+            bare = os.path.splitext(fn)[0]
+            rel = grp["name"] + "/" + fn
+            if bare.startswith(name):
+                pre.append(rel)
+            elif name in bare or bare in name:
+                sub.append(rel)
+    return (pre or sub or [None])[0]
+
+
 def normalize_look(raw):
     """键名别名归一 + 裸文件名解析。返回 (归一后的dict, 告警列表)。
     告警会顺着外观回读通道带给Claude，它下一轮自己就会改。"""
@@ -524,12 +545,36 @@ def normalize_look(raw):
             out[ck] = str(v).replace("\\", "/")
     for ck in list(out):
         if not sticker_path(out[ck]):
-            hit = find_sticker_by_name(out[ck])
+            hit = find_sticker_by_name(out[ck]) or fuzzy_sticker(out[ck])
             if hit:
                 out[ck] = hit
             else:
                 warns.append("%s 指向的图找不到: %s" % (ck, out[ck]))
     return out, warns
+
+
+# ── 表情包穿帮自纠：模型编了不存在的文件名，下一轮悄悄告诉它 ──
+STK_TAG_RE = re.compile(r"\[\[(?:表情|sticker)[:：]\s*([^\]]+?)\s*\]\]")
+STK_WARN = {}   # skey 或 "gkey/成员名" → 上一轮没兑现的表情名列表
+
+
+def unresolved_stickers(text):
+    """找出文本里指向不存在的图的表情标签（模糊救援也救不回的才算）"""
+    bad = []
+    for name in STK_TAG_RE.findall(text or ""):
+        rel = name.replace("\\", "/")
+        if sticker_path(rel) or find_sticker_by_name(rel) or fuzzy_sticker(rel):
+            continue
+        if name not in bad:
+            bad.append(name)
+    return bad
+
+
+def stk_warn_text(bad):
+    return ("(提示：你上一轮写的 " +
+            "、".join("[[表情:%s]]" % b for b in bad[:3]) +
+            " 在表情库里不存在，已按文字显示给用户。"
+            "发表情前先List " + STICKER_DIR + " 确认文件名，没有合适的就用emoji或文字动作。)")
 
 
 # 工具调用的一行摘要：模型自己在这些字段里写了"这一步在干什么"，
@@ -937,6 +982,9 @@ class Handler(BaseHTTPRequestHandler):
             what = "表情包" if n_stickers == len(images) else "图片"
             text = (text or ("我发了一个" + what + "。")) + \
                 "\n\n(我发了" + what + "，请先用Read工具查看这些文件再回答: " + " ; ".join(images) + ")"
+        bad_prev = STK_WARN.pop(skey, None)
+        if bad_prev:
+            text += "\n\n" + stk_warn_text(bad_prev)
         cur_sig = look_state_line(skey)
         if not sid:
             text += "\n\n" + intro_text(skey)
@@ -1004,6 +1052,7 @@ class Handler(BaseHTTPRequestHandler):
             new_sid = None
             last_text = ""
             err_ev = None
+            round_texts = []
             try:
                 for line in proc.stdout:
                     line = line.strip()
@@ -1018,6 +1067,7 @@ class Handler(BaseHTTPRequestHandler):
                             new_sid = ev["id"]
                         elif ev.get("kind") == "text":
                             last_text = ev["text"]
+                            round_texts.append(ev["text"])
                             append_jsonl(history_path(skey),
                                          {"who": "claude", "name": "Claude",
                                           "text": ev["text"], "ts": int(time.time())})
@@ -1037,6 +1087,9 @@ class Handler(BaseHTTPRequestHandler):
             with ACTIVE_LOCK:
                 was_stopped = ACTIVE.get(rid, {}).get("stopped", False)
                 ACTIVE.pop(rid, None)
+            bad_stk = unresolved_stickers("\n".join(round_texts))
+            if bad_stk:
+                STK_WARN[skey] = bad_stk   # 下一轮开头悄悄提醒它
             if was_stopped:
                 # 用户按了停止：不要当成会话失效去重试，否则中断白按
                 self._finish_session(skey, new_sid, raw_text, last_text)
@@ -1144,6 +1197,9 @@ class Handler(BaseHTTPRequestHandler):
             parts.append("[群聊转录·你上次发言之后的新消息]\n" + transcript_text(msgs))
         if images:
             parts.append("(用户发的图片，请先用Read工具查看: " + " ; ".join(images) + ")")
+        bad_prev = STK_WARN.pop(gkey + "/" + member["name"], None)
+        if bad_prev:
+            parts.append(stk_warn_text(bad_prev))
         parts.append("请以「" + member["name"] + "」的身份就上面的对话发言。")
         return "\n\n".join(parts)
 
@@ -1217,6 +1273,9 @@ class Handler(BaseHTTPRequestHandler):
                         save_sessions(d)
                 if r["text"]:
                     last_reply = r["text"]
+                    bad_stk = unresolved_stickers(r["text"])
+                    if bad_stk:
+                        STK_WARN[gkey + "/" + m["name"]] = bad_stk
                 if r["stopped"]:
                     if len(targets) > 1:
                         self._emit({"kind": "note", "text": "已停止，后面的成员不再发言"})
