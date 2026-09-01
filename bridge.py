@@ -615,6 +615,14 @@ def translate(obj):
             yield {"kind": "session", "id": sid}
         if obj.get("is_error") and obj.get("result"):
             yield {"kind": "error", "text": str(obj.get("result"))[:800]}
+        u = obj.get("usage") or {}
+        tin = ((u.get("input_tokens") or 0) + (u.get("cache_read_input_tokens") or 0) +
+               (u.get("cache_creation_input_tokens") or 0))
+        tout = u.get("output_tokens") or 0
+        if tout or obj.get("duration_ms"):
+            # 额度敏感的用户想知道每轮花了多少——数据本来就在流里，捡起来就行
+            yield {"kind": "stats", "tin": tin, "tout": tout,
+                   "ms": obj.get("duration_ms") or 0}
 
 
 class Handler(BaseHTTPRequestHandler):

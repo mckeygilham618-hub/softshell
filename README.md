@@ -5,6 +5,8 @@
 **A chat-app style interface for the Claude subscription you already pay for.**
 Runs on the Claude Code CLI. No Claude desktop app, no admin rights, no virtualization.
 
+> **EN TL;DR** — Softshell is a local, WeChat-style chat window for the Claude Code CLI on Windows: chat bubbles, stickers, avatars, multi-session, and group chats where several Claude models talk to each other. One Python file + one HTML file, no server, no telemetry, MIT. UI is Chinese-first.
+
 ---
 
 ![Softshell 截图](softshell.png)

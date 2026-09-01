@@ -191,9 +191,10 @@
   }
   .gbtns button.primary { background: #07c160; color: #fff; border-color: #07c160; }
   #grouphint {
-    float: left; max-width: 70%; overflow: hidden;
+    float: left; max-width: 55%; overflow: hidden;
     white-space: nowrap; text-overflow: ellipsis;
   }
+  #laststats { float: left; margin-right: 12px; color: #b0b0b0; }
 
   /* ── 查找 / 置顶 / 回放 ── */
   #searchbtn {
@@ -333,7 +334,7 @@
   <button id="send">发送</button>
 </footer>
 <div id="statusbar">
-  <span id="grouphint" style="display:none"></span><span class="sbtn" id="modelbtn">默认模型</span><span class="sbtn" id="effortbtn">默认</span>
+  <span id="laststats"></span><span id="grouphint" style="display:none"></span><span class="sbtn" id="modelbtn">默认模型</span><span class="sbtn" id="effortbtn">默认</span>
 </div>
 <div class="popmenu" id="modelmenu">
   <div class="mtitle">模型</div>
@@ -586,6 +587,11 @@
     else if (ev.kind === 'tool') {
       chip('⚙ ' + (m ? m.name + ' · ' : '') + ev.name + (ev.detail ? ' · ' + ev.detail : ''));
       setStatus(who + '正在用 ' + ev.name);
+    }
+    else if (ev.kind === 'stats') {
+      roundStats.tin += ev.tin || 0;
+      roundStats.tout += ev.tout || 0;
+      roundStats.ms += ev.ms || 0;
     }
     else if (ev.kind === 'session') setStatus('等待Claude响应');
     else if (ev.kind === 'status') setStatus(ev.text);
@@ -1277,8 +1283,12 @@
     btn.classList.toggle('stopping', on);
   }
 
+  var roundStats = { tin: 0, tout: 0, ms: 0 };
+  function fmtTok(n) { return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n); }
+
   async function send(stickerId) {
     if (busy) return;
+    roundStats = { tin: 0, tout: 0, ms: 0 };
     var text = stickerId ? '' : ta.value.trim();
     var imgs = stickerId ? [] : pending.slice();
     var stks = stickerId ? [stickerId] : [];
@@ -1335,8 +1345,16 @@
       }
     } catch (e) {
       if (!(e && e.name === 'AbortError')) {
-        bubble('bot', '<span class="err">连接断了：' + esc(String(e)) + '</span>');
+        var hint = (e instanceof TypeError)
+          ? '桥接没在运行——双击软壳文件夹里的 bridge.py 就能恢复，聊天窗口会自动重新打开'
+          : '连接断了：' + esc(String(e));
+        bubble('bot', '<span class="err">' + hint + '</span>');
       }
+    }
+    if (roundStats.tout || roundStats.ms) {
+      document.getElementById('laststats').textContent =
+        '上轮 ↑' + fmtTok(roundStats.tin) + ' ↓' + fmtTok(roundStats.tout) +
+        ' · ' + Math.round(roundStats.ms / 1000) + 's';
     }
     stopStatus();
     typing.remove();
