@@ -247,6 +247,28 @@
     display: flex; gap: 6px; flex: none; align-items: flex-end;
   }
   #callbtn.oncall { background: #ffecec; border-color: #ff8a80; }
+  #calloverlay {
+    position: fixed; inset: 0; z-index: 200; display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; color: #eef3ee; text-align: center;
+    background: linear-gradient(160deg, #22312a 0%, #17211b 60%, #101712 100%);
+  }
+  #calloverlay.open { display: flex; }
+  #cavatar {
+    width: 108px; height: 108px; border-radius: 14px; overflow: hidden;
+    background: #fff; box-shadow: 0 8px 30px rgba(0,0,0,.4);
+  }
+  #cavatar img { width: 100%; height: 100%; object-fit: cover; }
+  #cname { font-size: 20px; font-weight: 600; }
+  #cstatus { font-size: 14px; color: #9fd4ae; min-height: 20px; }
+  #ctimer { font-size: 13px; color: #7f938a; }
+  #hangup {
+    margin-top: 18px; width: 64px; height: 64px; border-radius: 50%;
+    border: 0; background: #e64340; color: #fff; font-size: 26px;
+    cursor: pointer; box-shadow: 0 6px 20px rgba(230,67,64,.4);
+  }
+  #hangup:hover { background: #f25350; }
+  #chint { font-size: 12px; color: #66766d; margin-top: 6px; }
   #voicestate { float: left; margin-right: 10px; color: #07c160; }
   #emobtn, #attach, #callbtn {
     background: none; border: 1px solid #ccc; border-radius: 6px; color: #555;
@@ -329,6 +351,14 @@
   <div class="gbtns"><button id="gcancel">取消</button><button id="gok" class="primary">建群</button></div>
 </div>
 <div class="popmenu" id="atmenu" style="left:250px;right:auto;bottom:64px"></div>
+<div id="calloverlay">
+  <div id="cavatar"><img id="cavimg" style="display:none"></div>
+  <div id="cname">Claude</div>
+  <div id="cstatus">连接中…</div>
+  <div id="ctimer">00:00</div>
+  <button id="hangup" title="挂断">📵</button>
+  <div id="chint">开口即说 · 它讲话时你说一句它就闭嘴听你的</div>
+</div>
 <div id="spanel">
   <div class="srow"><input type="text" id="sq" placeholder="搜索本会话的聊天记录"><button id="sclose">×</button></div>
   <div id="stabs">
@@ -1331,18 +1361,14 @@
     }
   }
 
-  /* ── 语音通话：对讲机式。听=SenseVoice本地识别，说=浏览器语音合成 ── */
-  var callbtn = document.getElementById('callbtn');
-  var voicestateEl = document.getElementById('voicestate');
-  function setVoiceState(s) { voicestateEl.textContent = s ? '📞' + s : ''; }
-
+  /* ── 语音通话v2：浏览器采音(自带回声消除)→桥接VAD/识别；
+        常驻CLI进程流式生成，逐句取mp3连播；你插话即打断 ── */
   function curRate() {
     var r = '+30%';
     try { r = localStorage.getItem('ttsRate') || '+30%'; } catch (e) {}
     return r;
   }
   function curVoiceId() {
-    // 会话绑定优先，其次全局记忆，兜底本地女声
     var v = (LOOK && LOOK.tts) || '';
     if (!v) { try { v = localStorage.getItem('ttsVoice2') || ''; } catch (e) {} }
     return v || 'local-female';
@@ -1362,8 +1388,7 @@
     }
     return vs[0];
   }
-  try { speechSynthesis.getVoices(); } catch (e) {}   // 触发嗓音列表预加载
-
+  try { speechSynthesis.getVoices(); } catch (e) {}   // 预加载嗓音列表
   function ttsClean(t) {
     t = String(t).replace(/```[\s\S]*?```/g, '，代码略，');
     t = t.replace(/\[\[(?:表情|sticker)[:：][^\]]*\]\]/g, '');
@@ -1371,6 +1396,189 @@
     t = t.replace(/[*#>`|~_]{1,}/g, '');
     return t;
   }
+  var callbtn = document.getElementById('callbtn');
+  var CALL2 = { on: false, ac: null, node: null, stream: null,
+                evT: null, spT: null, tmT: null, t0: 0,
+                turn: 0, queue: [], playing: false, cur: null };
+
+  function setCallStatus(s) { document.getElementById('cstatus').textContent = s; }
+  function showOverlay() {
+    var cur = SESSIONS.filter(function (x) { return x.key === SKEY; })[0];
+    document.getElementById('cname').textContent = (cur && cur.name) || 'Claude';
+    var img = document.getElementById('cavimg');
+    if (LOOK.avatar_claude) {
+      img.src = stickerUrl(LOOK.avatar_claude);
+      img.style.display = 'block';
+    } else { img.style.display = 'none'; }
+    CALL2.t0 = Date.now();
+    var tm = document.getElementById('ctimer');
+    CALL2.tmT = setInterval(function () {
+      var s = Math.floor((Date.now() - CALL2.t0) / 1000);
+      tm.textContent = ('0' + Math.floor(s / 60)).slice(-2) + ':' + ('0' + s % 60).slice(-2);
+    }, 1000);
+    document.getElementById('calloverlay').classList.add('open');
+  }
+  function hideOverlay() {
+    if (CALL2.tmT) clearInterval(CALL2.tmT);
+    document.getElementById('calloverlay').classList.remove('open');
+  }
+
+  function stopCallAudio() {
+    CALL2.queue = [];
+    CALL2.playing = false;
+    if (CALL2.cur) { try { CALL2.cur.pause(); } catch (e) {} CALL2.cur = null; }
+    try { speechSynthesis.cancel(); } catch (e) {}
+  }
+
+  function playNextSentence() {
+    if (!CALL2.on || CALL2.playing || !CALL2.queue.length) return;
+    CALL2.playing = true;
+    setCallStatus('在说');
+    var sent = CALL2.queue.shift();
+    var next = function () {
+      CALL2.playing = false;
+      CALL2.cur = null;
+      if (CALL2.queue.length) playNextSentence();
+      else if (CALL2.on) setCallStatus('在听');
+    };
+    var vid = curVoiceId();
+    var clean = ttsClean(sent);
+    if (!clean.trim()) { next(); return; }
+    if (vid.indexOf('local-') === 0) {
+      speakLocal(clean, vid, next);
+      return;
+    }
+    fetch('/tts', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: clean.slice(0, 600), voice: vid, rate: curRate() })
+    }).then(function (r) {
+      if (!r.ok) throw new Error('tts');
+      return r.blob();
+    }).then(function (b) {
+      if (!CALL2.on) { next(); return; }
+      CALL2.cur = new Audio(URL.createObjectURL(b));
+      CALL2.cur.onended = CALL2.cur.onerror = next;
+      CALL2.cur.play().catch(next);
+    }).catch(function () { speakLocal(clean, 'local-female', next); });
+  }
+
+  async function pumpUserSpeech() {
+    if (!CALL2.on) return;
+    try {
+      var j = await (await fetch('/voice/poll')).json();
+      if (j.err) { chip('语音故障：' + esc(j.err)); endCall2(); return; }
+      if (!j.text) return;
+      stopCallAudio();          // 打断：你开口，它闭嘴
+      setCallStatus('在想');
+      var r = await (await fetch('/call/say', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: j.text })
+      })).json();
+      if (r && r.turn) CALL2.turn = r.turn;
+    } catch (e) {}
+  }
+
+  async function pumpEvents() {
+    if (!CALL2.on) return;
+    try {
+      var j = await (await fetch('/call/events')).json();
+      (j.events || []).forEach(function (ev) {
+        if (ev.kind === 'say') {
+          if (ev.turn === CALL2.turn) { CALL2.queue.push(ev.text); playNextSentence(); }
+        } else if (ev.kind === 'status') {
+          if (ev.turn === CALL2.turn && !CALL2.playing) setCallStatus(ev.text);
+        } else if (ev.kind === 'turn_end') {
+          if (ev.tout || ev.ms) {
+            document.getElementById('laststats').textContent =
+              '上轮 ↑' + fmtTok(ev.tin || 0) + ' ↓' + fmtTok(ev.tout || 0) +
+              ' · ' + Math.round((ev.ms || 0) / 1000) + 's';
+          }
+          if (ev.turn === CALL2.turn && !CALL2.queue.length && !CALL2.playing) {
+            setCallStatus('在听');
+          }
+        } else if (ev.kind === 'call_dead') {
+          chip('通话进程退出了');
+          endCall2();
+        }
+      });
+    } catch (e) {}
+  }
+
+  async function startCall2() {
+    var st;
+    try {
+      st = await (await fetch('/call/start', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: SKEY })
+      })).json();
+    } catch (e) { chip('通话没起来：桥接没响应'); return; }
+    if (!st.ok) {
+      chip('通话没起来：' + ((st.missing || []).map(esc).join('；') || esc(st.err || '')));
+      return;
+    }
+    try {
+      CALL2.stream = await navigator.mediaDevices.getUserMedia({ audio: {
+        echoCancellation: true, noiseSuppression: true,
+        autoGainControl: true, channelCount: 1 } });
+    } catch (e) {
+      chip('麦克风打不开：' + esc(String(e)));
+      fetch('/call/stop', { method: 'POST' }).catch(function () {});
+      return;
+    }
+    CALL2.ac = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    var src = CALL2.ac.createMediaStreamSource(CALL2.stream);
+    CALL2.node = CALL2.ac.createScriptProcessor(4096, 1, 1);
+    var feeding = false;
+    CALL2.node.onaudioprocess = function (ev2) {
+      if (!CALL2.on || feeding) return;
+      var f = ev2.inputBuffer.getChannelData(0);
+      var i16 = new Int16Array(f.length);
+      for (var i = 0; i < f.length; i++) {
+        var s = Math.max(-1, Math.min(1, f[i]));
+        i16[i] = s < 0 ? s * 32768 : s * 32767;
+      }
+      feeding = true;
+      fetch('/voice/feed', { method: 'POST', body: i16.buffer })
+        .catch(function () {})
+        .then(function () { feeding = false; });
+    };
+    src.connect(CALL2.node);
+    CALL2.node.connect(CALL2.ac.destination);
+    CALL2.on = true;
+    CALL2.turn = 0;
+    CALL2.queue = [];
+    callbtn.classList.add('oncall');
+    showOverlay();
+    setCallStatus('在听');
+    CALL2.spT = setInterval(pumpUserSpeech, 300);
+    CALL2.evT = setInterval(pumpEvents, 300);
+  }
+
+  function endCall2() {
+    if (!CALL2.on && !document.getElementById('calloverlay').classList.contains('open')) return;
+    CALL2.on = false;
+    if (CALL2.spT) clearInterval(CALL2.spT);
+    if (CALL2.evT) clearInterval(CALL2.evT);
+    stopCallAudio();
+    try { CALL2.node && CALL2.node.disconnect(); } catch (e) {}
+    try { CALL2.ac && CALL2.ac.close(); } catch (e) {}
+    try {
+      if (CALL2.stream) CALL2.stream.getTracks().forEach(function (tr) { tr.stop(); });
+    } catch (e) {}
+    fetch('/call/stop', { method: 'POST' }).catch(function () {});
+    callbtn.classList.remove('oncall');
+    hideOverlay();
+    delete chatCache[SKEY];       // 通话内容以文字气泡回放进聊天窗
+    renderHistory(SKEY);
+    updateWordCount();
+    loadSessions();
+  }
+  callbtn.addEventListener('click', function () {
+    if (CALL2.on) endCall2(); else startCall2();
+  });
+  document.getElementById('hangup').addEventListener('click', endCall2);
+
+  /* 试听用的本地/在线播报（嗓音菜单） */
   var ttsBusy = false;
   var ttsAudio = null;
   function stopSpeak() {
@@ -1384,41 +1592,29 @@
       var v = pickVoice(vid);
       if (v) u.voice = v;
       u.lang = 'zh-CN';
-      u.rate = 1 + (parseInt(curRate(), 10) || 0) / 100;   // +30% → 1.3倍速
-      u.onend = u.onerror = done;
+      u.rate = 1 + (parseInt(curRate(), 10) || 0) / 100;
+      var fired = false;
+      u.onend = u.onerror = function () { if (!fired) { fired = true; done(); } };
       speechSynthesis.cancel();
-      // Chromium坑：cancel后立刻speak会把这句吞掉，垫一拍再说
       setTimeout(function () {
         speechSynthesis.speak(u);
         try { speechSynthesis.resume(); } catch (e2) {}
       }, 150);
     } catch (e) { done(); }
   }
-  function muteMic(on) {
-    if (!CALL.on) return;   // 没在通话不用管麦克风
-    fetch('/voice/mute', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ on: on ? 1 : 0 })
-    }).catch(function () {});
-  }
   function speak(text, onend) {
     var clean = ttsClean(text);
     if (!clean.trim()) { if (onend) onend(); return; }
     var vid = curVoiceId();
     ttsBusy = true;
-    muteMic(true);   // 播报期间闭麦：试听词和朗读声再也进不了麦克风
     var fired = false;
     var done = function () {
       if (fired) return;
       fired = true;
-      setTimeout(function () {   // 稍等余音散去再开麦，桥接开麦时会顺带清残段
-        muteMic(false);
-        ttsBusy = false;
-        if (onend) onend();
-      }, 350);
+      ttsBusy = false;
+      if (onend) onend();
     };
     if (vid.indexOf('local-') === 0) { speakLocal(clean, vid, done); return; }
-    // 在线神经嗓音：桥接代理edge-tts；没装/断网自动降级本地女声
     fetch('/tts', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: clean.slice(0, 600), voice: vid, rate: curRate() })
@@ -1432,56 +1628,6 @@
       ttsAudio.play().catch(done);
     }).catch(function () { speakLocal(clean, 'local-female', done); });
   }
-
-  async function pollVoice() {
-    if (!CALL.on || busy || ttsBusy || speechSynthesis.speaking ||
-        (ttsAudio && !ttsAudio.paused && !ttsAudio.ended)) return;
-    try {
-      var j = await (await fetch('/voice/poll')).json();
-      if (j.err) { chip('语音故障：' + esc(j.err)); endCall(); return; }
-      if (!j.text) return;
-      setVoiceState('在想');
-      ta.value = j.text;
-      CALL.reply = [];
-      await send();
-      if (!CALL.on) return;
-      var replyText = CALL.reply.join('。');
-      if (replyText) {
-        setVoiceState('在说');
-        speak(replyText, function () { setVoiceState('在听'); });
-      } else {
-        setVoiceState('在听');
-      }
-    } catch (e) {}
-  }
-  function endCall() {
-    CALL.on = false;
-    if (CALL.timer) clearInterval(CALL.timer);
-    CALL.timer = null;
-    fetch('/voice/stop', { method: 'POST' }).catch(function () {});
-    callbtn.classList.remove('oncall');
-    setVoiceState('');
-    stopSpeak();
-  }
-  callbtn.addEventListener('click', async function () {
-    if (CALL.on) { endCall(); chip('通话结束'); return; }
-    try {
-      var st = await (await fetch('/voice/status')).json();
-      if (!st.ready) {
-        chip('语音通话未就绪：' + st.missing.map(esc).join('；'));
-        chip('装好后再点📞即可。安装方法见 README 的「语音通话」章节');
-        return;
-      }
-      var r = await (await fetch('/voice/start', { method: 'POST' })).json();
-      if (!r.ok) { chip('语音启动失败'); return; }
-      await fetch('/voice/poll');   // 清掉历史残留
-      CALL.on = true;
-      CALL.timer = setInterval(pollVoice, 800);
-      callbtn.classList.add('oncall');
-      setVoiceState('在听');
-      chip('通话开始：说完停一秒会自动发送，再点📞挂断。戴耳机效果最佳');
-    } catch (e) { chip('语音通话不可用：桥接没响应'); }
-  });
 
   /* 嗓音选择（点击即试听） */
   var voicebtn = document.getElementById('voicebtn');

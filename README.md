@@ -87,20 +87,22 @@ stickers/共享/无奈-扶额.jpg
 
 ## 语音通话（可选件）
 
-对讲机式通话：点📞后直接说话，**说完停一秒自动发送**，Claude 的回复自动朗读出来，再点📞挂断。朗读嗓音在底部状态栏「嗓音」里选（男声/女声，点击即试听）。识别在你本机完成，**完全离线、免费、无密钥**，中文准确率优于 Whisper-large-v3。
+微信语音通话式的界面：点📞进入通话页（大头像＋状态＋挂断键，通话中不显示文字），开口即说，说完停顿即发送；回复**边生成边逐句朗读**，不等全文；**它讲话时你插一句，它就闭嘴听你的**。挂断后整段通话变成文字气泡留在聊天窗里，接着打字聊记忆无缝衔接。
+
+采音在你的浏览器内完成（自带回声消除，外放也不会自听自话）；识别在你本机完成，**完全离线、免费、无密钥**，中文准确率优于 Whisper-large-v3。回复速度取决于所选模型的思考时长——快模型首句几秒可达，深思考模型该想还是要想。
 
 不装不影响软壳本体。想用的话三步：
 
 1. 安装依赖：
 
 ```bash
-pip install sherpa-onnx sounddevice
+pip install sherpa-onnx
 ```
 
 2. 下载两个模型文件，放进软壳目录的 `voice\` 文件夹：
    - [SenseVoice 识别模型](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2)（约250MB，解压后把里面的 `model.int8.onnx` 和 `tokens.txt` 放进 `voice\`）
    - [silero_vad.onnx](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx)（约2MB，断句用）
-3. 点📞开聊。戴耳机效果最佳（外放时它可能听到自己说话）。
+3. 点📞开聊（首次会请求麦克风权限）。
 
 **朗读嗓音**在底部状态栏「嗓音」里选，点击即试听，**每个会话可以绑定不同的嗓音**——给不同的 Claude 形象配不同的声线。本地男女声开箱即用；想要更好听的**在线神经嗓音**（晓晓、云希、东北小北等8款），再装一个：
 

@@ -455,12 +455,15 @@ def group_intro(member_name, all_names):
     )
 
 
-# ── 语音通话（可选件）：SenseVoice本地识别，对讲机式半双工 ──
-# 依赖：pip install sherpa-onnx sounddevice；模型放 voice\ 文件夹。
-# 缺什么都不影响软壳本体，点📞时才检查。
+# ── 语音通话v2（可选件）：流式管道 ──
+# 采音在浏览器完成（Chromium自带回声消除），PCM喂给 /voice/feed；
+# 桥接跑 VAD+SenseVoice；通话用常驻CLI进程流式生成，逐句切给前端念。
 VOICE_DIR = os.path.join(DIR, "voice")
-VOICE = {"thread": None, "stop": False, "queue": [], "err": "",
-         "mute": False, "flush": False, "lock": threading.Lock()}
+VOICE = {"rec": None, "vad": None, "queue": [], "err": "",
+         "plock": threading.Lock(), "lock": threading.Lock()}
+CALLP = {"proc": None, "skey": "", "reader": None, "events": [],
+         "turn": 0, "sid": None, "lock": threading.Lock()}
+SENT_SPLIT_RE = re.compile(r"[^。！？!?\n；;]*[。！？!?\n；;]+")
 
 
 def voice_missing():
@@ -469,62 +472,144 @@ def voice_missing():
         import sherpa_onnx  # noqa: F401
     except ImportError:
         miss.append("未安装识别引擎：pip install sherpa-onnx")
-    try:
-        import sounddevice  # noqa: F401
-    except ImportError:
-        miss.append("未安装录音库：pip install sounddevice")
     for fn in ("model.int8.onnx", "tokens.txt", "silero_vad.onnx"):
         if not os.path.isfile(os.path.join(VOICE_DIR, fn)):
             miss.append("缺模型文件 voice\\" + fn + "（下载地址见README语音章节）")
     return miss
 
 
-def voice_worker():
-    """后台监听：麦克风→VAD断句→SenseVoice转文字→进队列。"""
-    import sherpa_onnx
-    import sounddevice as sd
+def voice_engine_up():
+    """加载识别引擎（只加载一次，通话间复用）。返回错误串，空串=成功。"""
+    if VOICE["rec"] is not None:
+        return ""
     try:
-        rec = sherpa_onnx.OfflineRecognizer.from_sense_voice(
+        import sherpa_onnx
+        VOICE["rec"] = sherpa_onnx.OfflineRecognizer.from_sense_voice(
             model=os.path.join(VOICE_DIR, "model.int8.onnx"),
             tokens=os.path.join(VOICE_DIR, "tokens.txt"),
             use_itn=True, language="auto", num_threads=2)
         vcfg = sherpa_onnx.VadModelConfig()
         vcfg.silero_vad.model = os.path.join(VOICE_DIR, "silero_vad.onnx")
-        vcfg.silero_vad.threshold = 0.5
-        vcfg.silero_vad.min_silence_duration = 0.8   # 停0.8秒算说完一句
-        vcfg.silero_vad.min_speech_duration = 0.3
+        vcfg.silero_vad.threshold = 0.35          # 灵敏些，别掐掉首音节
+        vcfg.silero_vad.min_silence_duration = 0.7
+        vcfg.silero_vad.min_speech_duration = 0.2
         vcfg.silero_vad.max_speech_duration = 30
         vcfg.sample_rate = 16000
-        vad = sherpa_onnx.VoiceActivityDetector(vcfg, buffer_size_in_seconds=120)
-    except Exception as ex:                    # noqa: BLE001 可选件，出错要能报给前端
-        VOICE["err"] = "语音引擎启动失败：" + str(ex)[:300]
-        return
-    n_read = int(0.1 * 16000)
+        VOICE["vad"] = sherpa_onnx.VoiceActivityDetector(
+            vcfg, buffer_size_in_seconds=60)
+        return ""
+    except Exception as ex:                        # noqa: BLE001 可选件要能报错
+        VOICE["rec"] = None
+        VOICE["vad"] = None
+        return str(ex)[:300]
+
+
+def _call_emit(ev):
+    with CALLP["lock"]:
+        CALLP["events"].append(ev)
+        if len(CALLP["events"]) > 500:
+            CALLP["events"] = CALLP["events"][-300:]
+
+
+def _archive_call_rec(skey, text, think=False):
+    rec = {"who": "claude", "name": "Claude",
+           "text": canonicalize_stickers(text) if not think else text,
+           "ts": int(time.time())}
+    if think:
+        rec["think"] = True
+    append_jsonl(history_path(skey), rec)
+
+
+def call_reader():
+    """常驻进程的读线程：partial流→逐句切给前端；完整消息落档；result收账。"""
+    proc = CALLP["proc"]
+    pending = ""
+    turn_said = False
+
+    def flush_pending(force=False):
+        nonlocal pending, turn_said
+        while True:
+            m = SENT_SPLIT_RE.match(pending)
+            if not m:
+                break
+            sent = m.group(0).strip()
+            pending = pending[m.end():]
+            if sent:
+                turn_said = True
+                _call_emit({"kind": "say", "text": sent, "turn": CALLP["turn"]})
+        if force and pending.strip():
+            turn_said = True
+            _call_emit({"kind": "say", "text": pending.strip(),
+                        "turn": CALLP["turn"]})
+            pending = ""
+
     try:
-        with sd.InputStream(channels=1, dtype="float32", samplerate=16000) as stream:
-            while not VOICE["stop"]:
-                samples, _ = stream.read(n_read)
-                if VOICE.get("flush"):
-                    VOICE["flush"] = False
-                    while not vad.empty():
-                        vad.pop()
-                    with VOICE["lock"]:
-                        VOICE["queue"] = []
-                if VOICE.get("mute"):
-                    continue   # 播报期间麦克风听到的都是自己的喇叭，直接丢
-                vad.accept_waveform(samples.reshape(-1))
-                while not vad.empty():
-                    seg = vad.front.samples
-                    vad.pop()
-                    st = rec.create_stream()
-                    st.accept_waveform(16000, seg)
-                    rec.decode_stream(st)
-                    text = st.result.text.strip()
-                    if text:
-                        with VOICE["lock"]:
-                            VOICE["queue"].append(text)
-    except Exception as ex:                    # noqa: BLE001
-        VOICE["err"] = "麦克风或识别异常：" + str(ex)[:300]
+        for line in proc.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except ValueError:
+                continue
+            t = obj.get("type")
+            if t == "stream_event":
+                ev = obj.get("event") or {}
+                if ev.get("type") == "content_block_delta":
+                    d = ev.get("delta") or {}
+                    if d.get("type") == "text_delta":
+                        pending += d.get("text") or ""
+                        flush_pending()
+            elif t == "system" and obj.get("subtype") == "init":
+                if obj.get("session_id"):
+                    CALLP["sid"] = obj["session_id"]
+            elif t == "assistant":
+                for block in (obj.get("message") or {}).get("content", []):
+                    bt = block.get("type")
+                    if bt == "text" and block.get("text"):
+                        _archive_call_rec(CALLP["skey"], block["text"])
+                        if not turn_said:
+                            # 没吃到partial流（旗标不支持等情况）：整段现切现念
+                            pending += block["text"]
+                            flush_pending(force=True)
+                    elif bt == "thinking" and block.get("thinking"):
+                        _archive_call_rec(CALLP["skey"], block["thinking"],
+                                          think=True)
+                        _call_emit({"kind": "status", "text": "在想",
+                                    "turn": CALLP["turn"]})
+            elif t == "result":
+                if obj.get("session_id"):
+                    CALLP["sid"] = obj["session_id"]
+                flush_pending(force=True)
+                u = obj.get("usage") or {}
+                _call_emit({"kind": "turn_end", "turn": CALLP["turn"],
+                            "tin": ((u.get("input_tokens") or 0) +
+                                    (u.get("cache_read_input_tokens") or 0) +
+                                    (u.get("cache_creation_input_tokens") or 0)),
+                            "tout": u.get("output_tokens") or 0,
+                            "ms": obj.get("duration_ms") or 0})
+                turn_said = False
+    except (OSError, ValueError):
+        pass
+    _call_emit({"kind": "call_dead"})
+
+
+def call_stop_proc():
+    """挂断：杀进程、把会话链指针交还给文字聊天。"""
+    proc = CALLP["proc"]
+    if proc:
+        kill_tree(proc)
+    CALLP["proc"] = None
+    if CALLP.get("sid") and CALLP.get("skey"):
+        with SESS_LOCK:
+            d = load_sessions()
+            e = get_session(d, CALLP["skey"])
+            if e:
+                e["sid"] = CALLP["sid"]
+                e["ts"] = int(time.time())
+                save_sessions(d)
+    CALLP["skey"] = ""
+
 
 
 def migrate_member_avatars():
@@ -922,11 +1007,11 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
         if path == "/voice/status":
-            th = VOICE.get("thread")
             self._send_bytes(json.dumps({
                 "ready": not voice_missing(),
                 "missing": voice_missing(),
-                "listening": bool(th and th.is_alive()),
+                "engine": VOICE["rec"] is not None,
+                "calling": bool(CALLP["proc"]),
                 "err": VOICE.get("err", ""),
             }, ensure_ascii=False).encode("utf-8"),
                 "application/json; charset=utf-8", {"Cache-Control": "no-store"})
@@ -938,6 +1023,14 @@ class Handler(BaseHTTPRequestHandler):
             self._send_bytes(json.dumps({
                 "text": " ".join(texts), "err": VOICE.get("err", ""),
             }, ensure_ascii=False).encode("utf-8"),
+                "application/json; charset=utf-8", {"Cache-Control": "no-store"})
+            return
+        if path == "/call/events":
+            with CALLP["lock"]:
+                evs = CALLP["events"][:]
+                CALLP["events"] = []
+            self._send_bytes(json.dumps({"events": evs},
+                                        ensure_ascii=False).encode("utf-8"),
                 "application/json; charset=utf-8", {"Cache-Control": "no-store"})
             return
         if path == "/uploadfile":
@@ -990,40 +1083,139 @@ class Handler(BaseHTTPRequestHandler):
                 "application/json; charset=utf-8",
             )
             return
-        if self.path == "/voice/start":
-            miss = voice_missing()
-            if miss:
-                self._send_bytes(json.dumps({"ok": False, "missing": miss},
-                                            ensure_ascii=False).encode("utf-8"),
-                                 "application/json; charset=utf-8")
+        if self.path == "/voice/feed":
+            # 浏览器送来的16kHz int16 PCM块：VAD断句→SenseVoice→结果进队列
+            n = int(self.headers.get("Content-Length", 0))
+            if n <= 0 or n > 2 * 1024 * 1024:
+                self.send_error(400)
                 return
-            th = VOICE.get("thread")
-            if not (th and th.is_alive()):
-                VOICE["stop"] = False
-                VOICE["err"] = ""
-                VOICE["mute"] = False
-                VOICE["flush"] = False
-                with VOICE["lock"]:
-                    VOICE["queue"] = []
-                th = threading.Thread(target=voice_worker, daemon=True)
-                VOICE["thread"] = th
-                th.start()
+            raw = self.rfile.read(n)
+            if VOICE["rec"] is None:
+                self.send_error(409)   # 引擎没起
+                return
+            try:
+                import numpy as np
+                samples = (np.frombuffer(raw[: len(raw) // 2 * 2], dtype=np.int16)
+                           .astype(np.float32) / 32768.0)
+                texts = []
+                with VOICE["plock"]:
+                    vad, rec = VOICE["vad"], VOICE["rec"]
+                    vad.accept_waveform(samples)
+                    while not vad.empty():
+                        seg = vad.front.samples
+                        vad.pop()
+                        st = rec.create_stream()
+                        st.accept_waveform(16000, seg)
+                        rec.decode_stream(st)
+                        tx = st.result.text.strip()
+                        if tx:
+                            texts.append(tx)
+                if texts:
+                    with VOICE["lock"]:
+                        VOICE["queue"].extend(texts)
+            except Exception as ex:              # noqa: BLE001
+                VOICE["err"] = "识别异常：" + str(ex)[:200]
             self._send_bytes(b'{"ok": true}', "application/json; charset=utf-8")
             return
-        if self.path == "/voice/mute":
+        if self.path == "/call/start":
             n = int(self.headers.get("Content-Length", 0))
             try:
                 p = json.loads(self.rfile.read(n).decode("utf-8"))
             except (ValueError, UnicodeDecodeError):
-                p = {}
-            on = bool(p.get("on"))
-            VOICE["mute"] = on
-            if not on:
-                VOICE["flush"] = True   # 开麦前清掉播报期间攒的残段
+                self.send_error(400)
+                return
+            miss = voice_missing()
+            if miss or not CLAUDE:
+                self._send_bytes(json.dumps({"ok": False, "missing": miss},
+                                            ensure_ascii=False).encode("utf-8"),
+                                 "application/json; charset=utf-8")
+                return
+            err = voice_engine_up()
+            if err:
+                self._send_bytes(json.dumps({"ok": False, "err": err},
+                                            ensure_ascii=False).encode("utf-8"),
+                                 "application/json; charset=utf-8")
+                return
+            with SESS_LOCK:
+                d = load_sessions()
+                sess = get_session(d, str(p.get("key", "")))
+            if not sess or sess.get("type") == "group":
+                self._send_bytes(json.dumps(
+                    {"ok": False, "err": "\u7fa4\u804a\u6682\u4e0d\u652f\u6301\u901a\u8bdd"},
+                    ensure_ascii=False).encode("utf-8"),
+                    "application/json; charset=utf-8")
+                return
+            if CALLP["proc"]:
+                call_stop_proc()
+            cmd = [CLAUDE, "-p", "--input-format", "stream-json",
+                   "--output-format", "stream-json", "--verbose",
+                   "--include-partial-messages",
+                   "--dangerously-skip-permissions"]
+            if valid_model(sess.get("model") or ""):
+                cmd += ["--model", sess["model"]]
+            if (sess.get("effort") or "") in EFFORTS:
+                cmd += ["--effort", sess["effort"]]
+            if sess.get("sid"):
+                cmd += ["--resume", sess["sid"]]
+            try:
+                proc = subprocess.Popen(
+                    cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL, cwd=HOME,
+                    encoding="utf-8", errors="replace", creationflags=NO_WINDOW)
+            except OSError as ex:
+                self._send_bytes(json.dumps({"ok": False, "err": str(ex)[:200]},
+                                            ensure_ascii=False).encode("utf-8"),
+                                 "application/json; charset=utf-8")
+                return
+            with CALLP["lock"]:
+                CALLP["events"] = []
+            CALLP["proc"] = proc
+            CALLP["skey"] = sess["key"]
+            CALLP["turn"] = 0
+            CALLP["sid"] = sess.get("sid") or None
+            with VOICE["lock"]:
+                VOICE["queue"] = []
+            VOICE["err"] = ""
+            th = threading.Thread(target=call_reader, daemon=True)
+            CALLP["reader"] = th
+            th.start()
             self._send_bytes(b'{"ok": true}', "application/json; charset=utf-8")
             return
-        if self.path == "/voice/stop":
-            VOICE["stop"] = True
+        if self.path == "/call/say":
+            n = int(self.headers.get("Content-Length", 0))
+            try:
+                p = json.loads(self.rfile.read(n).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                self.send_error(400)
+                return
+            text = str(p.get("text") or "").strip()
+            proc = CALLP["proc"]
+            if not text or not proc:
+                self.send_error(409)
+                return
+            skey = CALLP["skey"]
+            append_jsonl(history_path(skey),
+                         {"who": "user", "name": "用户", "text": text,
+                          "ts": int(time.time())})
+            send_text = text
+            if CALLP["turn"] == 0 and not CALLP.get("sid"):
+                send_text += "\n\n" + intro_text(skey)   # 新会话链的开场白
+            CALLP["turn"] += 1
+            try:
+                proc.stdin.write(json.dumps({
+                    "type": "user",
+                    "message": {"role": "user",
+                                "content": [{"type": "text", "text": send_text}]},
+                }, ensure_ascii=False) + "\n")
+                proc.stdin.flush()
+            except OSError:
+                self.send_error(500)
+                return
+            self._send_bytes(json.dumps({"ok": True, "turn": CALLP["turn"]})
+                             .encode("utf-8"), "application/json; charset=utf-8")
+            return
+        if self.path == "/call/stop":
+            call_stop_proc()
             self._send_bytes(b'{"ok": true}', "application/json; charset=utf-8")
             return
         if self.path == "/group/new":
@@ -1354,6 +1546,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def _claim_send(self, skey):
         """同一会话一次只许一轮在跑。抢不到锁就体面拒绝，消息不落档不烧额度。"""
+        if CALLP["proc"] and CALLP["skey"] == skey:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.emit_lock = threading.Lock()
+            self._emit({"kind": "error",
+                        "text": "这个会话正在语音通话中，先挂断再打字。"})
+            self._emit({"kind": "done"})
+            return False
         with SENDING_LOCK:
             if skey in SENDING:
                 self.send_response(200)
