@@ -243,11 +243,13 @@
     background: #f7f7f7; border-top: 1px solid #ddd; padding: 8px;
     display: flex; gap: 6px; flex: none; align-items: flex-end;
   }
-  #emobtn, #attach {
+  #callbtn.oncall { background: #ffecec; border-color: #ff8a80; }
+  #voicestate { float: left; margin-right: 10px; color: #07c160; }
+  #emobtn, #attach, #callbtn {
     background: none; border: 1px solid #ccc; border-radius: 6px; color: #555;
     font-size: 18px; padding: 8px 11px; cursor: pointer; flex: none;
   }
-  #emobtn:hover, #attach:hover { background: #eee; }
+  #emobtn:hover, #attach:hover, #callbtn:hover { background: #eee; }
   #emobtn.on { background: #e3e3e3; border-color: #aaa; }
   textarea {
     flex: 1; border: 1px solid #ddd; border-radius: 6px; padding: 9px 10px;
@@ -344,12 +346,13 @@
 <footer>
   <button id="emobtn" title="表情和表情包">😀</button>
   <button id="attach" title="发图片（也可以直接Ctrl+V粘贴截图）">📎</button>
+  <button id="callbtn" title="语音通话（对讲机式：说完停0.8秒自动发送，回复自动朗读）">📞</button>
   <input id="file" type="file" accept="image/*" multiple style="display:none">
   <textarea id="input" placeholder="说话（Enter换行，Ctrl+Enter发送，Ctrl+V可贴图）"></textarea>
   <button id="send">发送</button>
 </footer>
 <div id="statusbar">
-  <span id="laststats"></span><span id="grouphint" style="display:none"></span><span class="sbtn" id="modelbtn">默认模型</span><span class="sbtn" id="effortbtn">默认</span>
+  <span id="voicestate"></span><span id="laststats"></span><span id="grouphint" style="display:none"></span><span class="sbtn" id="voicebtn">嗓音</span><span class="sbtn" id="modelbtn">默认模型</span><span class="sbtn" id="effortbtn">默认</span>
 </div>
 <div class="popmenu" id="modelmenu">
   <div class="mtitle">模型</div>
@@ -366,6 +369,12 @@
     <div class="mi" data-model="claude-sonnet-4-6"><span>Sonnet 4.6</span><span class="chk">✓</span></div>
     <div class="mi" data-model="opusplan"><span>OpusPlan<span class="num">（Opus规划+Sonnet执行）</span></span><span class="chk">✓</span></div>
   </div>
+</div>
+<div class="popmenu" id="voicemenu">
+  <div class="mtitle">朗读嗓音（点击即试听）</div>
+  <div class="mi" data-voice="female"><span>女声</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="male"><span>男声</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice=""><span>浏览器默认</span><span class="chk">✓</span></div>
 </div>
 <div class="popmenu" id="effortmenu">
   <div class="mtitle">Effort</div>
@@ -389,6 +398,7 @@
   var gridEl = document.getElementById('grid');
   var emobtn = document.getElementById('emobtn');
   var busy = false;
+  var CALL = { on: false, timer: null, reply: [] };   // 语音通话状态
   var curRid = null;      // 本次请求的id，停止时告诉后端杀哪个
   var curAbort = null;    // 中断前端的流式读取
   var pending = [];
@@ -617,7 +627,11 @@
   function handle(ev) {
     var m = ev.member;   // 群聊事件带着"这是谁说的"
     var who = m ? '「' + m.name + '」' : '';
-    if (ev.kind === 'text') { botSay(ev.text, m); setStatus(who + '继续输出中'); }
+    if (ev.kind === 'text') {
+      botSay(ev.text, m);
+      if (CALL.on) CALL.reply.push(ev.text);
+      setStatus(who + '继续输出中');
+    }
     else if (ev.kind === 'thinking') {
       bubble('thought', (m ? esc(m.name) + '：' : '') + md(ev.text));
       setStatus(who + '思考中');
@@ -1263,6 +1277,132 @@
     }
   }
 
+  /* ── 语音通话：对讲机式。听=SenseVoice本地识别，说=浏览器语音合成 ── */
+  var callbtn = document.getElementById('callbtn');
+  var voicestateEl = document.getElementById('voicestate');
+  function setVoiceState(s) { voicestateEl.textContent = s ? '📞' + s : ''; }
+
+  function pickVoice() {
+    var pref = '';
+    try { pref = localStorage.getItem('ttsVoice') || ''; } catch (e) {}
+    var vs = speechSynthesis.getVoices().filter(function (v) {
+      return /^zh/i.test(v.lang);
+    });
+    if (!vs.length) return null;
+    var wants = pref === 'male'
+      ? ['Yunxi', '云希', 'Yunyang', '云扬', 'Yunjian', 'Kangkang']
+      : pref === 'female'
+        ? ['Xiaoxiao', '晓晓', 'Xiaoyi', '晓伊', 'Huihui', 'Yaoyao']
+        : [];
+    for (var i = 0; i < wants.length; i++) {
+      for (var j = 0; j < vs.length; j++) {
+        if (vs[j].name.indexOf(wants[i]) >= 0) return vs[j];
+      }
+    }
+    return vs[0];
+  }
+  try { speechSynthesis.getVoices(); } catch (e) {}   // 触发嗓音列表预加载
+
+  function ttsClean(t) {
+    t = String(t).replace(/```[\s\S]*?```/g, '，代码略，');
+    t = t.replace(/\[\[(?:表情|sticker)[:：][^\]]*\]\]/g, '');
+    t = t.replace(/https?:\/\/\S+/g, '某链接');
+    t = t.replace(/[*#>`|~_]{1,}/g, '');
+    return t;
+  }
+  function speak(text, onend) {
+    try {
+      var u = new SpeechSynthesisUtterance(ttsClean(text));
+      var v = pickVoice();
+      if (v) u.voice = v;
+      u.lang = 'zh-CN';
+      u.onend = u.onerror = function () { if (onend) onend(); };
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    } catch (e) { if (onend) onend(); }
+  }
+
+  async function pollVoice() {
+    if (!CALL.on || busy || speechSynthesis.speaking) return;
+    try {
+      var j = await (await fetch('/voice/poll')).json();
+      if (j.err) { chip('语音故障：' + esc(j.err)); endCall(); return; }
+      if (!j.text) return;
+      setVoiceState('在想');
+      ta.value = j.text;
+      CALL.reply = [];
+      await send();
+      if (!CALL.on) return;
+      var replyText = CALL.reply.join('。');
+      if (replyText) {
+        setVoiceState('在说');
+        speak(replyText, function () {
+          // 外放时麦克风会听见自己刚才说的话——丢弃朗读期间攒下的误识别
+          setTimeout(function () {
+            fetch('/voice/poll').catch(function () {});
+            setVoiceState('在听');
+          }, 500);
+        });
+      } else {
+        setVoiceState('在听');
+      }
+    } catch (e) {}
+  }
+  function endCall() {
+    CALL.on = false;
+    if (CALL.timer) clearInterval(CALL.timer);
+    CALL.timer = null;
+    fetch('/voice/stop', { method: 'POST' }).catch(function () {});
+    callbtn.classList.remove('oncall');
+    setVoiceState('');
+    try { speechSynthesis.cancel(); } catch (e) {}
+  }
+  callbtn.addEventListener('click', async function () {
+    if (CALL.on) { endCall(); chip('通话结束'); return; }
+    try {
+      var st = await (await fetch('/voice/status')).json();
+      if (!st.ready) {
+        chip('语音通话未就绪：' + st.missing.map(esc).join('；'));
+        chip('装好后再点📞即可。安装方法见 README 的「语音通话」章节');
+        return;
+      }
+      var r = await (await fetch('/voice/start', { method: 'POST' })).json();
+      if (!r.ok) { chip('语音启动失败'); return; }
+      await fetch('/voice/poll');   // 清掉历史残留
+      CALL.on = true;
+      CALL.timer = setInterval(pollVoice, 800);
+      callbtn.classList.add('oncall');
+      setVoiceState('在听');
+      chip('通话开始：说完停一秒会自动发送，再点📞挂断。戴耳机效果最佳');
+    } catch (e) { chip('语音通话不可用：桥接没响应'); }
+  });
+
+  /* 嗓音选择（点击即试听） */
+  var voicebtn = document.getElementById('voicebtn');
+  var voicemenu = document.getElementById('voicemenu');
+  function paintVoiceMenu() {
+    var cur = '';
+    try { cur = localStorage.getItem('ttsVoice') || ''; } catch (e) {}
+    voicemenu.querySelectorAll('.mi[data-voice]').forEach(function (mi) {
+      mi.classList.toggle('on', mi.dataset.voice === cur);
+    });
+  }
+  voicebtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    modelmenu.classList.remove('open');
+    effortmenu.classList.remove('open');
+    paintVoiceMenu();
+    voicemenu.classList.toggle('open');
+  });
+  voicemenu.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var mi = e.target.closest('.mi');
+    if (!mi || mi.dataset.voice === undefined) return;
+    try { localStorage.setItem('ttsVoice', mi.dataset.voice); } catch (e2) {}
+    paintVoiceMenu();
+    speak('你好，我是软壳，以后我就用这个声音陪你说话。');
+  });
+
   /* ── 模型 / effort 切换 ── */
   var modelbtn = document.getElementById('modelbtn');
   var effortbtn = document.getElementById('effortbtn');
@@ -1301,6 +1441,7 @@
   function closeMenus() {
     modelmenu.classList.remove('open');
     effortmenu.classList.remove('open');
+    document.getElementById('voicemenu').classList.remove('open');
     document.getElementById('morewrap').style.display = 'none';
   }
   function setPref(key, val, label) {

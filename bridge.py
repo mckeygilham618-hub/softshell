@@ -451,6 +451,70 @@ def group_intro(member_name, all_names):
     )
 
 
+# ── 语音通话（可选件）：SenseVoice本地识别，对讲机式半双工 ──
+# 依赖：pip install sherpa-onnx sounddevice；模型放 voice\ 文件夹。
+# 缺什么都不影响软壳本体，点📞时才检查。
+VOICE_DIR = os.path.join(DIR, "voice")
+VOICE = {"thread": None, "stop": False, "queue": [], "err": "",
+         "lock": threading.Lock()}
+
+
+def voice_missing():
+    miss = []
+    try:
+        import sherpa_onnx  # noqa: F401
+    except ImportError:
+        miss.append("未安装识别引擎：pip install sherpa-onnx")
+    try:
+        import sounddevice  # noqa: F401
+    except ImportError:
+        miss.append("未安装录音库：pip install sounddevice")
+    for fn in ("model.int8.onnx", "tokens.txt", "silero_vad.onnx"):
+        if not os.path.isfile(os.path.join(VOICE_DIR, fn)):
+            miss.append("缺模型文件 voice\\" + fn + "（下载地址见README语音章节）")
+    return miss
+
+
+def voice_worker():
+    """后台监听：麦克风→VAD断句→SenseVoice转文字→进队列。"""
+    import sherpa_onnx
+    import sounddevice as sd
+    try:
+        rec = sherpa_onnx.OfflineRecognizer.from_sense_voice(
+            model=os.path.join(VOICE_DIR, "model.int8.onnx"),
+            tokens=os.path.join(VOICE_DIR, "tokens.txt"),
+            use_itn=True, language="auto", num_threads=2)
+        vcfg = sherpa_onnx.VadModelConfig()
+        vcfg.silero_vad.model = os.path.join(VOICE_DIR, "silero_vad.onnx")
+        vcfg.silero_vad.threshold = 0.5
+        vcfg.silero_vad.min_silence_duration = 0.8   # 停0.8秒算说完一句
+        vcfg.silero_vad.min_speech_duration = 0.3
+        vcfg.silero_vad.max_speech_duration = 30
+        vcfg.sample_rate = 16000
+        vad = sherpa_onnx.VoiceActivityDetector(vcfg, buffer_size_in_seconds=120)
+    except Exception as ex:                    # noqa: BLE001 可选件，出错要能报给前端
+        VOICE["err"] = "语音引擎启动失败：" + str(ex)[:300]
+        return
+    n_read = int(0.1 * 16000)
+    try:
+        with sd.InputStream(channels=1, dtype="float32", samplerate=16000) as stream:
+            while not VOICE["stop"]:
+                samples, _ = stream.read(n_read)
+                vad.accept_waveform(samples.reshape(-1))
+                while not vad.empty():
+                    seg = vad.front.samples
+                    vad.pop()
+                    st = rec.create_stream()
+                    st.accept_waveform(16000, seg)
+                    rec.decode_stream(st)
+                    text = st.result.text.strip()
+                    if text:
+                        with VOICE["lock"]:
+                            VOICE["queue"].append(text)
+    except Exception as ex:                    # noqa: BLE001
+        VOICE["err"] = "麦克风或识别异常：" + str(ex)[:300]
+
+
 def migrate_member_avatars():
     """老群的成员头像原本实时引用源会话，改成独立快照。
     源会话已删的成员保持无头像——不擅自还原用户已经放弃的脸。"""
@@ -834,6 +898,25 @@ class Handler(BaseHTTPRequestHandler):
                 {"Cache-Control": "no-store"},
             )
             return
+        if path == "/voice/status":
+            th = VOICE.get("thread")
+            self._send_bytes(json.dumps({
+                "ready": not voice_missing(),
+                "missing": voice_missing(),
+                "listening": bool(th and th.is_alive()),
+                "err": VOICE.get("err", ""),
+            }, ensure_ascii=False).encode("utf-8"),
+                "application/json; charset=utf-8", {"Cache-Control": "no-store"})
+            return
+        if path == "/voice/poll":
+            with VOICE["lock"]:
+                texts = VOICE["queue"][:]
+                VOICE["queue"] = []
+            self._send_bytes(json.dumps({
+                "text": " ".join(texts), "err": VOICE.get("err", ""),
+            }, ensure_ascii=False).encode("utf-8"),
+                "application/json; charset=utf-8", {"Cache-Control": "no-store"})
+            return
         if path == "/uploadfile":
             q = parse_qs(urlparse(self.path).query)
             fn = (q.get("f") or [""])[0]
@@ -883,6 +966,28 @@ class Handler(BaseHTTPRequestHandler):
                 json.dumps({"killed": killed}).encode("utf-8"),
                 "application/json; charset=utf-8",
             )
+            return
+        if self.path == "/voice/start":
+            miss = voice_missing()
+            if miss:
+                self._send_bytes(json.dumps({"ok": False, "missing": miss},
+                                            ensure_ascii=False).encode("utf-8"),
+                                 "application/json; charset=utf-8")
+                return
+            th = VOICE.get("thread")
+            if not (th and th.is_alive()):
+                VOICE["stop"] = False
+                VOICE["err"] = ""
+                with VOICE["lock"]:
+                    VOICE["queue"] = []
+                th = threading.Thread(target=voice_worker, daemon=True)
+                VOICE["thread"] = th
+                th.start()
+            self._send_bytes(b'{"ok": true}', "application/json; charset=utf-8")
+            return
+        if self.path == "/voice/stop":
+            VOICE["stop"] = True
+            self._send_bytes(b'{"ok": true}', "application/json; charset=utf-8")
             return
         if self.path == "/group/new":
             n = int(self.headers.get("Content-Length", 0))

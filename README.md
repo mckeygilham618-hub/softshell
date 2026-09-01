@@ -85,6 +85,26 @@ stickers/共享/无奈-扶额.jpg
 
 **查找与导出**：标题栏 🔍 搜当前会话的聊天记录，分全文／图片与表情包／链接／文件路径四类，点结果跳回原消息位置。聊天记录自动留档在本地 `history/` 和 `groups/` 文件夹（永不上传），重开窗口自动恢复；右键会话可导出成 md 文件，落在 `exports/`。
 
+## 语音通话（可选件）
+
+对讲机式通话：点📞后直接说话，**说完停一秒自动发送**，Claude 的回复自动朗读出来，再点📞挂断。朗读嗓音在底部状态栏「嗓音」里选（男声/女声，点击即试听）。识别在你本机完成，**完全离线、免费、无密钥**，中文准确率优于 Whisper-large-v3。
+
+不装不影响软壳本体。想用的话三步：
+
+1. 安装依赖：
+
+```bash
+pip install sherpa-onnx sounddevice
+```
+
+2. 下载两个模型文件，放进软壳目录的 `voice\` 文件夹：
+   - [SenseVoice 识别模型](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2)（约250MB，解压后把里面的 `model.int8.onnx` 和 `tokens.txt` 放进 `voice\`）
+   - [silero_vad.onnx](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx)（约2MB，断句用）
+3. 点📞开聊。戴耳机效果最佳（外放时它可能听到自己说话）。
+
+> 语音识别引擎为阿里 FunAudioLLM 团队开源的 SenseVoice-Small（FunASR Model License v1.1，允许商用、要求署名——特此致谢）。支持普通话、粤语、英语、日语、韩语。
+> 说明：回复速度取决于所选 Claude 模型的思考时长，体验更像对讲机而非电话——它听得快，想得没那么快。
+
 ## 合规声明
 
 - 本工具使用**你自己的** Claude 账号与额度。不代理、不中转、不代付，不收集或存储任何账号凭证。
