@@ -1483,18 +1483,30 @@
     }).catch(function () { setCallStatus('在说'); speakLocal(clean, 'local-female', next); });
   }
 
+  var pendingSpeech = '', pendingT = 0;
   async function pumpUserSpeech() {
     if (!CALL2.on) return;
     try {
       var j = await (await fetch('/voice/poll')).json();
       if (j.err) { chip('语音故障：' + esc(j.err)); endCall2(); return; }
-      if (!j.text) return;
-      stopCallAudio();          // 打断：你开口，它闭嘴
-      document.getElementById('cheard').textContent = '你说：' + j.text;
+      if (j.text) {
+        stopCallAudio();          // 打断：你开口，它闭嘴
+        pendingSpeech += (pendingSpeech ? ' ' : '') + j.text;
+        pendingT = Date.now();
+        document.getElementById('cheard').textContent = '你说：' + pendingSpeech;
+        setCallStatus('在听你说…');
+        return;
+      }
+      if (!pendingSpeech) return;
+      // 凑句宽限：停顿≠说完。句尾有标点少等点，没标点多等点，期间接着说会拼起来
+      var grace = /[。！？!?]\s*$/.test(pendingSpeech) ? 900 : 1800;
+      if (Date.now() - pendingT < grace) return;
+      var msg = pendingSpeech;
+      pendingSpeech = '';
       setCallStatus('发送中');
       var r = await (await fetch('/call/say', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: j.text })
+        body: JSON.stringify({ text: msg })
       })).json();
       if (r && r.turn) {
         CALL2.turn = r.turn;
@@ -1589,6 +1601,7 @@
   function endCall2() {
     if (!CALL2.on && !document.getElementById('calloverlay').classList.contains('open')) return;
     CALL2.on = false;
+    pendingSpeech = '';
     if (CALL2.spT) clearInterval(CALL2.spT);
     if (CALL2.evT) clearInterval(CALL2.evT);
     stopCallAudio();

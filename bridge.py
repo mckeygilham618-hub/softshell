@@ -464,6 +464,14 @@ VOICE = {"rec": None, "vad": None, "queue": [], "err": "",
 CALLP = {"proc": None, "skey": "", "reader": None, "events": [],
          "turn": 0, "sid": None, "lock": threading.Lock()}
 SENT_SPLIT_RE = re.compile(r"[^。！？!?\n；;]*[。！？!?\n；;]+")
+CALL_HINT = (
+    "(语音通话模式：用户正在跟你打电话，你的回复会被逐句转成语音念出来。"
+    "请：①回复短一点，按口语节奏说话，别用markdown排版、列表和长段落；"
+    "②用户的话是语音转文字来的，会出现吃字、错别字、同音字、重复字——"
+    "先按上下文猜最合理的意思，拿不准就直接跟用户确认，不要瞎脑补；"
+    "③听不懂就问。)"
+)
+CALL_ENDED = set()   # 挂断过电话的会话：下一条文字消息告知它已回到打字聊天
 
 
 def voice_missing():
@@ -623,6 +631,8 @@ def call_stop_proc():
                 e["sid"] = CALLP["sid"]
                 e["ts"] = int(time.time())
                 save_sessions(d)
+    if CALLP.get("skey"):
+        CALL_ENDED.add(CALLP["skey"])
     CALLP["skey"] = ""
 
 
@@ -1213,8 +1223,10 @@ class Handler(BaseHTTPRequestHandler):
                          {"who": "user", "name": "用户", "text": text,
                           "ts": int(time.time())})
             send_text = text
-            if CALLP["turn"] == 0 and not CALLP.get("sid"):
-                send_text += "\n\n" + intro_text(skey)   # 新会话链的开场白
+            if CALLP["turn"] == 0:
+                if not CALLP.get("sid"):
+                    send_text += "\n\n" + intro_text(skey)   # 新会话链的开场白
+                send_text += "\n\n" + CALL_HINT              # 每通电话的第一句都带
             CALLP["turn"] += 1
             _call_emit({"kind": "status", "text": "已送达，等待Claude响应",
                         "turn": CALLP["turn"]})
@@ -1606,6 +1618,9 @@ class Handler(BaseHTTPRequestHandler):
         bad_prev = STK_WARN.pop(skey, None)
         if bad_prev:
             text += "\n\n" + stk_warn_text(bad_prev)
+        if skey in CALL_ENDED:
+            CALL_ENDED.discard(skey)
+            text += "\n\n(刚才的语音通话已结束，现在回到文字聊天，可以正常排版。)"
         cur_sig = look_state_line(skey)
         if not sid:
             text += "\n\n" + intro_text(skey)
