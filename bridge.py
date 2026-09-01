@@ -447,8 +447,26 @@ def group_intro(member_name, all_names):
         + STICKER_DIR + " 里有表情包，需要时可写 [[表情:文件名]] 发送"
         "（单独占一行，会显示成独立的一条表情消息；只写翻看后确认存在的文件名，"
         "猜错会穿帮成文字），直接打emoji也行。"
-        "群里不改头像背景，换装请让用户去你的单聊窗口找你。)"
+        "群成员的头像在建群时定格，群里不换装。)"
     )
+
+
+def migrate_member_avatars():
+    """老群的成员头像原本实时引用源会话，改成独立快照。
+    源会话已删的成员保持无头像——不擅自还原用户已经放弃的脸。"""
+    with SESS_LOCK:
+        d = load_sessions()
+        changed = False
+        for s in d["list"]:
+            if s.get("type") != "group":
+                continue
+            for mm in s.get("members", []):
+                if "avatar" not in mm:
+                    rel = load_look_of(mm.get("srckey") or "").get("avatar_claude") or ""
+                    mm["avatar"] = rel if sticker_path(rel) else ""
+                    changed = True
+        if changed:
+            save_sessions(d)
 
 
 def ensure_sticker_dir():
@@ -807,7 +825,7 @@ class Handler(BaseHTTPRequestHandler):
             if e.get("type") == "group":
                 av = {}
                 for m in e.get("members", []):
-                    rel = load_look_of(m.get("srckey") or "").get("avatar_claude") or ""
+                    rel = m.get("avatar") or ""
                     av[m["name"]] = rel if sticker_path(rel) else ""
                 out["avatars"] = av
             self._send_bytes(
@@ -889,10 +907,13 @@ class Handler(BaseHTTPRequestHandler):
                     while nm in [m["name"] for m in members]:
                         nm = (e.get("name") or "成员") + str(i)
                         i += 1
+                    av = load_look_of(sk).get("avatar_claude") or ""
                     members.append({
                         "name": nm, "srckey": sk, "sid": "",
                         "model": e.get("model", ""), "effort": e.get("effort", ""),
                         "read": 0,
+                        # 独立外观存档：建群时定格快照，源会话之后怎么变怎么删都不影响
+                        "avatar": av if sticker_path(av) else "",
                     })
                 if len(members) < 2:
                     self.send_error(400)
@@ -1349,7 +1370,7 @@ class Handler(BaseHTTPRequestHandler):
             cmd += ["--effort", member["effort"]]
         if member.get("sid"):
             cmd += ["--resume", member["sid"]]
-        rel = load_look_of(member.get("srckey") or "").get("avatar_claude") or ""
+        rel = member.get("avatar") or ""
         minfo = {"name": member["name"], "avatar": rel if sticker_path(rel) else ""}
         try:
             proc = subprocess.Popen(
@@ -1634,6 +1655,7 @@ def open_window():
 def main():
     ensure_sticker_dir()
     ensure_sessions()
+    migrate_member_avatars()
     try:
         srv = SingleInstanceServer(("127.0.0.1", PORT), Handler)
     except OSError:
