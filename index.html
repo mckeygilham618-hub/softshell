@@ -336,7 +336,7 @@
   <button id="emobtn" title="表情和表情包">😀</button>
   <button id="attach" title="发图片（也可以直接Ctrl+V粘贴截图）">📎</button>
   <input id="file" type="file" accept="image/*" multiple style="display:none">
-  <textarea id="input" placeholder="说话（Enter发送，Shift+Enter换行，Ctrl+V可贴图）"></textarea>
+  <textarea id="input" placeholder="说话（Enter换行，Ctrl+Enter发送，Ctrl+V可贴图）"></textarea>
   <button id="send">发送</button>
 </footer>
 <div id="statusbar">
@@ -1414,7 +1414,8 @@
     }
   });
   ta.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+    // 回车=换行（打列表、写多行不打断），Ctrl+回车=发送
+    if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); send(); }
   });
   loadStickers();   // 先把表情包名字表拉下来，Claude 一上来就发表情也认得出
   loadSessions().then(loadLook).then(function () {
