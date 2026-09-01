@@ -279,6 +279,7 @@
     font-size: 14px; color: #1a1a1a; text-align: left;
   }
   .popmenu.open { display: block; }
+  #voicemenu { max-height: 72vh; overflow-y: auto; }
   .mtitle { font-size: 12px; color: #999; padding: 4px 12px 2px; font-weight: 600; }
   .mi {
     display: flex; justify-content: space-between; align-items: center;
@@ -371,9 +372,19 @@
   </div>
 </div>
 <div class="popmenu" id="voicemenu">
-  <div class="mtitle">朗读嗓音（点击即试听）</div>
-  <div class="mi" data-voice="female"><span>女声</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="male"><span>男声</span><span class="chk">✓</span></div>
+  <div class="mtitle">朗读嗓音 · 绑定当前会话（点击即试听）</div>
+  <div class="mtitle">在线神经嗓音（更好听，需联网）</div>
+  <div class="mi" data-voice="zh-CN-XiaoxiaoNeural"><span>晓晓 · 温暖女声</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="zh-CN-XiaoyiNeural"><span>晓伊 · 俏皮女声</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="zh-CN-liaoning-XiaobeiNeural"><span>小北 · 东北妹子</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="zh-CN-shaanxi-XiaoniNeural"><span>小妮 · 陕西妹子</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="zh-CN-YunxiNeural"><span>云希 · 阳光青年</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="zh-CN-YunjianNeural"><span>云健 · 成熟磁性</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="zh-CN-YunxiaNeural"><span>云夏 · 少年音</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="zh-CN-YunyangNeural"><span>云扬 · 播音男声</span><span class="chk">✓</span></div>
+  <div class="mtitle">本地嗓音（离线可用）</div>
+  <div class="mi" data-voice="local-female"><span>本地女声</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="local-male"><span>本地男声</span><span class="chk">✓</span></div>
 </div>
 <div class="popmenu" id="effortmenu">
   <div class="mtitle">Effort</div>
@@ -1281,14 +1292,18 @@
   var voicestateEl = document.getElementById('voicestate');
   function setVoiceState(s) { voicestateEl.textContent = s ? '📞' + s : ''; }
 
-  function pickVoice() {
-    var pref = 'female';
-    try { pref = localStorage.getItem('ttsVoice') || 'female'; } catch (e) {}
+  function curVoiceId() {
+    // 会话绑定优先，其次全局记忆，兜底本地女声
+    var v = (LOOK && LOOK.tts) || '';
+    if (!v) { try { v = localStorage.getItem('ttsVoice2') || ''; } catch (e) {} }
+    return v || 'local-female';
+  }
+  function pickVoice(vid) {
     var vs = speechSynthesis.getVoices().filter(function (v) {
       return /^zh/i.test(v.lang);
     });
     if (!vs.length) return null;
-    var wants = pref === 'male'
+    var wants = vid === 'local-male'
       ? ['Yunxi', '云希', 'Yunyang', '云扬', 'Yunjian', 'Kangkang']
       : ['Xiaoxiao', '晓晓', 'Xiaoyi', '晓伊', 'Huihui', 'Yaoyao'];
     for (var i = 0; i < wants.length; i++) {
@@ -1308,25 +1323,52 @@
     return t;
   }
   var ttsBusy = false;
-  function speak(text, onend) {
+  var ttsAudio = null;
+  function stopSpeak() {
+    try { speechSynthesis.cancel(); } catch (e) {}
+    if (ttsAudio) { try { ttsAudio.pause(); } catch (e) {} ttsAudio = null; }
+    ttsBusy = false;
+  }
+  function speakLocal(clean, vid, done) {
     try {
-      var u = new SpeechSynthesisUtterance(ttsClean(text));
-      var v = pickVoice();
+      var u = new SpeechSynthesisUtterance(clean);
+      var v = pickVoice(vid);
       if (v) u.voice = v;
       u.lang = 'zh-CN';
-      ttsBusy = true;
-      u.onend = u.onerror = function () { ttsBusy = false; if (onend) onend(); };
+      u.onend = u.onerror = done;
       speechSynthesis.cancel();
       // Chromium坑：cancel后立刻speak会把这句吞掉，垫一拍再说
       setTimeout(function () {
         speechSynthesis.speak(u);
         try { speechSynthesis.resume(); } catch (e2) {}
       }, 150);
-    } catch (e) { ttsBusy = false; if (onend) onend(); }
+    } catch (e) { done(); }
+  }
+  function speak(text, onend) {
+    var clean = ttsClean(text);
+    if (!clean.trim()) { if (onend) onend(); return; }
+    var vid = curVoiceId();
+    ttsBusy = true;
+    var done = function () { ttsBusy = false; if (onend) onend(); };
+    if (vid.indexOf('local-') === 0) { speakLocal(clean, vid, done); return; }
+    // 在线神经嗓音：桥接代理edge-tts；没装/断网自动降级本地女声
+    fetch('/tts', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: clean.slice(0, 600), voice: vid })
+    }).then(function (r) {
+      if (!r.ok) throw new Error('tts ' + r.status);
+      return r.blob();
+    }).then(function (b) {
+      if (ttsAudio) { try { ttsAudio.pause(); } catch (e) {} }
+      ttsAudio = new Audio(URL.createObjectURL(b));
+      ttsAudio.onended = ttsAudio.onerror = done;
+      ttsAudio.play().catch(done);
+    }).catch(function () { speakLocal(clean, 'local-female', done); });
   }
 
   async function pollVoice() {
-    if (!CALL.on || busy || ttsBusy || speechSynthesis.speaking) return;
+    if (!CALL.on || busy || ttsBusy || speechSynthesis.speaking ||
+        (ttsAudio && !ttsAudio.paused && !ttsAudio.ended)) return;
     try {
       var j = await (await fetch('/voice/poll')).json();
       if (j.err) { chip('语音故障：' + esc(j.err)); endCall(); return; }
@@ -1358,7 +1400,7 @@
     fetch('/voice/stop', { method: 'POST' }).catch(function () {});
     callbtn.classList.remove('oncall');
     setVoiceState('');
-    try { speechSynthesis.cancel(); } catch (e) {}
+    stopSpeak();
   }
   callbtn.addEventListener('click', async function () {
     if (CALL.on) { endCall(); chip('通话结束'); return; }
@@ -1384,8 +1426,7 @@
   var voicebtn = document.getElementById('voicebtn');
   var voicemenu = document.getElementById('voicemenu');
   function paintVoiceMenu() {
-    var cur = 'female';
-    try { cur = localStorage.getItem('ttsVoice') || 'female'; } catch (e) {}
+    var cur = curVoiceId();
     voicemenu.querySelectorAll('.mi[data-voice]').forEach(function (mi) {
       mi.classList.toggle('on', mi.dataset.voice === cur);
     });
@@ -1401,9 +1442,16 @@
     e.stopPropagation();
     var mi = e.target.closest('.mi');
     if (!mi || mi.dataset.voice === undefined) return;
-    try { localStorage.setItem('ttsVoice', mi.dataset.voice); } catch (e2) {}
+    var vid = mi.dataset.voice;
+    LOOK.tts = vid;                       // 立即生效
+    try { localStorage.setItem('ttsVoice2', vid); } catch (e2) {}   // 兼做新会话的全局默认
+    fetch('/prefs', {                     // 绑定到当前会话，跟着套装走
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: SKEY, tts: vid })
+    }).catch(function () {});
     paintVoiceMenu();
-    speak('你好，我是软壳，以后我就用这个声音陪你说话。');
+    stopSpeak();
+    speak('你好，我是软壳，以后我在这个会话里就用这个声音陪你说话。');
   });
 
   /* ── 模型 / effort 切换 ── */

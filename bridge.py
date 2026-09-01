@@ -829,6 +829,7 @@ class Handler(BaseHTTPRequestHandler):
             out["model"] = mdl if valid_model(mdl) else ""
             eff = (e.get("effort") if e else "") or ""
             out["effort"] = eff if eff in EFFORTS else ""
+            out["tts"] = (e.get("tts") if e else "") or ""   # 会话绑定的朗读嗓音
             self._send_bytes(
                 json.dumps(out, ensure_ascii=False).encode("utf-8"),
                 "application/json; charset=utf-8",
@@ -1169,6 +1170,44 @@ class Handler(BaseHTTPRequestHandler):
                 json.dumps({"html": hp, "pdf": pdf}, ensure_ascii=False).encode("utf-8"),
                 "application/json; charset=utf-8")
             return
+        if self.path == "/tts":
+            # 在线神经嗓音（可选升舱）：桥接代理 edge-tts，前端拿mp3来播
+            n = int(self.headers.get("Content-Length", 0))
+            try:
+                p = json.loads(self.rfile.read(n).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                self.send_error(400)
+                return
+            text = str(p.get("text") or "").strip()[:600]
+            voice = str(p.get("voice") or "")
+            if not text or not re.match(
+                    r"^[a-z]{2,3}-[A-Z]{2}(-[a-z]+)?-[A-Za-z]{2,40}Neural$", voice):
+                self.send_error(400)
+                return
+            try:
+                import edge_tts
+            except ImportError:
+                self.send_error(501)   # 没装升舱包：前端自动降级本地嗓音
+                return
+            import asyncio
+
+            async def _gen():
+                buf = bytearray()
+                async for ch in edge_tts.Communicate(text, voice).stream():
+                    if ch["type"] == "audio":
+                        buf.extend(ch["data"])
+                return bytes(buf)
+
+            try:
+                data = asyncio.run(asyncio.wait_for(_gen(), timeout=25))
+            except Exception:            # noqa: BLE001 断网/限流一律降级，不能砸通话
+                self.send_error(502)
+                return
+            if not data:
+                self.send_error(502)
+                return
+            self._send_bytes(data, "audio/mpeg", {"Cache-Control": "no-store"})
+            return
         if self.path == "/prefs":
             n = int(self.headers.get("Content-Length", 0))
             try:
@@ -1194,6 +1233,13 @@ class Handler(BaseHTTPRequestHandler):
                         self.send_error(400)
                         return
                     e["effort"] = ef
+                if "tts" in p:
+                    tv = str(p.get("tts") or "")
+                    if tv and not re.match(
+                            r"^(local-(fe)?male|[a-z]{2,3}-[A-Z]{2}(-[a-z]+)?-[A-Za-z]{2,40}Neural)$", tv):
+                        self.send_error(400)
+                        return
+                    e["tts"] = tv
                 save_sessions(d)
             self._send_bytes(b"ok", "text/plain")
             return

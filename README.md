@@ -102,6 +102,14 @@ pip install sherpa-onnx sounddevice
    - [silero_vad.onnx](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx)（约2MB，断句用）
 3. 点📞开聊。戴耳机效果最佳（外放时它可能听到自己说话）。
 
+**朗读嗓音**在底部状态栏「嗓音」里选，点击即试听，**每个会话可以绑定不同的嗓音**——给不同的 Claude 形象配不同的声线。本地男女声开箱即用；想要更好听的**在线神经嗓音**（晓晓、云希、东北小北等8款），再装一个：
+
+```bash
+pip install edge-tts
+```
+
+在线嗓音走微软免费接口（需联网，无需密钥）；断网或没装时自动降级回本地嗓音，通话不中断。
+
 > 语音识别引擎为阿里 FunAudioLLM 团队开源的 SenseVoice-Small（FunASR Model License v1.1，允许商用、要求署名——特此致谢）。支持普通话、粤语、英语、日语、韩语。
 > 说明：回复速度取决于所选 Claude 模型的思考时长，体验更像对讲机而非电话——它听得快，想得没那么快。
 
