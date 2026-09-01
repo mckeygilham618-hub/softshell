@@ -143,7 +143,7 @@ def intro_text(skey):
         " 的对应键：avatar_claude / avatar_user / background（JSON对象，"
         "没有该文件就新建）；写完不用做别的，你回复结束时窗口自动刷新，键置空恢复默认。"
         "用户想用自己的新图片换装时，请用户把图存到桌面并告诉你文件名，"
-        "你自己把它复制进表情包文件夹，再照上面的办法写外观文件。)"
+        "你自己把它复制进表情包文件夹的子文件夹（如 共享），再照上面的办法写外观文件。)"
     )
 
 
@@ -331,6 +331,18 @@ def archive_of(sess):
     return history_path(sess["key"])
 
 
+def _export_safe(text):
+    """消息正文里手打的分隔线/伪发言人抬头会与导出结构混淆，转义掉"""
+    out = []
+    for ln in (text or "").split("\n"):
+        s = ln.strip()
+        if (s in ("---", "***", "___") or re.match(r"^={3,}$", s) or
+                re.match(r"^\*\*.+\*\*（.+）：$", s)):
+            ln = "\\" + ln
+        out.append(ln)
+    return "\n".join(out)
+
+
 def export_md(sess):
     """把会话档案导成 md 文件，返回文件路径；失败返回 None。"""
     msgs = read_jsonl(archive_of(sess))
@@ -345,11 +357,14 @@ def export_md(sess):
     if not msgs:
         lines += ["（这个会话还没有留档的消息。留档从档案功能上线那天开始。）", ""]
     for m in msgs:
+        if m.get("who") == "system":
+            lines += ["（系统：%s）" % m.get("text", ""), "", "---", ""]
+            continue
         ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(m["ts"])) if m.get("ts") else ""
         lines.append("**%s**（%s）：" % (m.get("name", "?"), ts))
         lines.append("")
         if m.get("text"):
-            lines += [m["text"], ""]
+            lines += [_export_safe(m["text"]), ""]
         for x in m.get("stk") or []:
             lines.append("（表情包：stickers/%s）" % x)
         for x in m.get("imgs") or []:
@@ -408,6 +423,8 @@ def read_group_msgs(key, start):
 def transcript_text(msgs):
     out = []
     for m in msgs:
+        if m.get("who") == "system":
+            continue   # 系统灰条只给人看，不进成员的耳朵
         line = "%s: %s" % (m.get("name", "?"), m.get("text", ""))
         if m.get("stk"):
             line += " [表情包:%s]" % ",".join(
@@ -447,8 +464,24 @@ def ensure_sticker_dir():
         pass
 
 
+def _adopt_root_images():
+    """换装工作流偶尔把图搬到stickers根目录——面板只显示子文件夹，收编进「共享」"""
+    try:
+        for fn in os.listdir(STICKER_DIR):
+            src = os.path.join(STICKER_DIR, fn)
+            if os.path.isfile(src) and os.path.splitext(fn)[1].lower() in IMG_TYPES:
+                dst_dir = os.path.join(STICKER_DIR, "共享")
+                os.makedirs(dst_dir, exist_ok=True)
+                dst = os.path.join(dst_dir, fn)
+                if not os.path.exists(dst):
+                    shutil.move(src, dst)
+    except OSError:
+        pass
+
+
 def sticker_groups():
     """扫 stickers 下的每个子文件夹，返回 [{"name": 页签名, "items": [文件名...]}]"""
+    _adopt_root_images()
     groups = []
     try:
         subs = sorted(os.listdir(STICKER_DIR))
@@ -566,14 +599,16 @@ STK_WARN = {}   # skey 或 "gkey/成员名" → 上一轮没兑现的表情名�
 
 
 def unresolved_stickers(text):
-    """找出文本里指向不存在的图的表情标签（模糊救援也救不回的才算）"""
+    """找出指向不存在的图的表情标签。代码围栏里的是教学内容，不算数。"""
     bad = []
-    for name in STK_TAG_RE.findall(text or ""):
-        rel = name.replace("\\", "/")
-        if sticker_path(rel) or find_sticker_by_name(rel) or fuzzy_sticker(rel):
-            continue
-        if name not in bad:
-            bad.append(name)
+    parts = (text or "").split("```")
+    for i in range(0, len(parts), 2):
+        for name in STK_TAG_RE.findall(parts[i]):
+            rel = name.replace("\\", "/")
+            if sticker_path(rel) or find_sticker_by_name(rel) or fuzzy_sticker(rel):
+                continue
+            if name not in bad:
+                bad.append(name)
     return bad
 
 
@@ -592,10 +627,9 @@ def canonicalize_stickers(text):
 
 
 def stk_warn_text(bad):
-    return ("(提示：你上一轮写的 " +
-            "、".join("[[表情:%s]]" % b for b in bad[:3]) +
-            " 在表情库里不存在，已按文字显示给用户。"
-            "发表情前先List " + STICKER_DIR + " 确认文件名，没有合适的就用emoji或文字动作。)")
+    return ("(提示：你上一轮发的表情「" + "」「".join(bad[:3]) +
+            "」在表情库里不存在，已按文字显示给用户。"
+            "发表情前先List表情库文件夹确认文件名，没有合适的就用emoji或文字动作。)")
 
 
 # 工具调用的一行摘要：模型自己在这些字段里写了"这一步在干什么"，
@@ -1132,6 +1166,12 @@ class Handler(BaseHTTPRequestHandler):
                                          {"who": "claude", "name": "Claude",
                                           "text": canonicalize_stickers(ev["text"]),
                                           "ts": int(time.time())})
+                        elif ev.get("kind") == "tool":
+                            append_jsonl(history_path(skey),
+                                         {"who": "system", "name": "系统",
+                                          "text": "⚙ " + ev.get("name", "") +
+                                                  ((" · " + ev["detail"]) if ev.get("detail") else ""),
+                                          "ts": int(time.time())})
                         if ev.get("kind") == "error":
                             err_ev = ev   # 攒着：可能要自动重开重试，别过早吓用户
                             continue
@@ -1157,7 +1197,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._emit({"kind": "stats", "tin": 0, "tout": 0, "cr": 0, "cc": 0,
                             "ms": int((time.time() - t_round) * 1000), "cut": True})
                 self._finish_session(skey, new_sid, raw_text, last_text)
-                self._emit({"kind": "note", "text": "已停止"})
+                # 打断时机决定这条消息有没有进模型记忆——两种结果要说清楚
+                stop_note = ("已停止（这条消息已进入会话记忆，下轮它可能还记得）"
+                             if (emitted or new_sid) else
+                             "已停止（进程还没跑起来，这条消息大概率没进记忆，需要可重发）")
+                append_jsonl(history_path(skey),
+                             {"who": "system", "name": "系统",
+                              "text": stop_note, "ts": int(time.time())})
+                self._emit({"kind": "note", "text": stop_note})
                 self._emit({"kind": "done"})
                 return
             if proc.returncode != 0 and not last_text:
@@ -1169,8 +1216,13 @@ class Handler(BaseHTTPRequestHandler):
                     self._emit({"kind": "note", "text": "旧会话接不上了，已自动开新对话"})
                     continue
                 err = ("".join(err_buf)).strip()[-800:]
-                self._emit(err_ev or {"kind": "error",
-                                      "text": err or ("claude退出码 %s" % proc.returncode)})
+                eobj = err_ev or {"kind": "error",
+                                  "text": err or ("claude退出码 %s" % proc.returncode)}
+                self._emit(eobj)
+                append_jsonl(history_path(skey),
+                             {"who": "system", "name": "系统",
+                              "text": "错误：" + str(eobj.get("text", ""))[:300],
+                              "ts": int(time.time())})
             elif err_ev:
                 self._emit(err_ev)
             elif proc.returncode != 0:
@@ -1298,15 +1350,21 @@ class Handler(BaseHTTPRequestHandler):
         hits = []
         tmp = text.replace("＠", "@")   # 中文输入法的全角＠一视同仁
         for m in sorted(members, key=lambda x: -len(x["name"])):
-            tag = "@" + m["name"]
-            i = tmp.find(tag)
-            if i >= 0:
-                hits.append((i, m))
-                tmp = tmp.replace(tag, "\x00" * len(tag))   # 占位不移位，位置才数得准
+            # @前面若是邮箱式字符（test@阿甲.com）就不算点名
+            pat = re.compile(r"(?<![A-Za-z0-9._%+-])@" + re.escape(m["name"]))
+            mt = pat.search(tmp)
+            if mt:
+                hits.append((mt.start(), m))
+                tmp = pat.sub(lambda mo: "\x00" * len(mo.group(0)), tmp)
         targets = [m for _, m in sorted(hits, key=lambda x: x[0])]
         if not targets:
-            self._emit({"kind": "note",
-                        "text": "没有@任何成员：话已记进群，他们下次发言时会看到"})
+            if "@" in text.replace("＠", "@"):
+                self._emit({"kind": "note",
+                            "text": "@的名字不是本群成员（本群成员：" + "、".join(all_names) +
+                                    "）。话已记进群，但没有人被叫到。"})
+            else:
+                self._emit({"kind": "note",
+                            "text": "没有@任何成员：话已记进群，他们下次发言时会看到"})
             self._touch_group(gkey, text)
             self._emit({"kind": "done"})
             return
@@ -1325,9 +1383,10 @@ class Handler(BaseHTTPRequestHandler):
                     r = self._run_member(
                         m, self._member_prompt(gkey, m, all_names, images, True), rid)
                 if r["rc"] != 0 and not r["text"] and not r["stopped"]:
-                    self._emit({"kind": "error", "text":
-                                "「" + m["name"] + "」响应失败：" +
-                                (r["err"] or ("claude退出码 %s" % r["rc"]))})
+                    etxt = ("「" + m["name"] + "」响应失败：" +
+                            (r["err"] or ("claude退出码 %s" % r["rc"])))
+                    self._emit({"kind": "error", "text": etxt})
+                    append_group_msg(gkey, "system", "系统", etxt[:300])
                 # 落账：按名字匹配（群内唯一）。这轮失败就不推进已读指针，
                 # 没送达的消息下一轮还能补给他，群内认知不错位
                 ok = bool(r["text"]) or (r["rc"] == 0 and not r["stopped"])
@@ -1353,10 +1412,9 @@ class Handler(BaseHTTPRequestHandler):
                     if bad_stk:
                         STK_WARN[gkey + "/" + m["name"]] = bad_stk
                 if r["stopped"]:
-                    if len(targets) > 1:
-                        self._emit({"kind": "note", "text": "已停止，后面的成员不再发言"})
-                    else:
-                        self._emit({"kind": "note", "text": "已停止"})
+                    gnote = "已停止，后面的成员不再发言" if len(targets) > 1 else "已停止"
+                    append_group_msg(gkey, "system", "系统", gnote)
+                    self._emit({"kind": "note", "text": gnote})
                     break
         except (ConnectionError, OSError):
             return

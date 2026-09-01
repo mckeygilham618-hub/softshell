@@ -530,6 +530,7 @@
     d.textContent = text;
     chat.appendChild(d);
     chat.scrollTop = chat.scrollHeight;
+    return d;
   }
   /* 运行状态：让用户分得清"正常干活"和"卡死了" */
   var curStatus = '', statT0 = 0, statTimer = null, statEl = null;
@@ -943,7 +944,9 @@
   }
   function renderRec(m, idx) {
     var rows = [];
-    if (m.who === 'user') {
+    if (m.who === 'system') {          // 中断/错误/工具的灰条：回放时也在场
+      rows.push(chip(m.text || ''));
+    } else if (m.who === 'user') {
       (m.stk || []).forEach(function (x) { rows.push(nakedSticker('user', x)); });
       var h = recHtml(m);
       if (h) rows.push(bubble('user', h));
