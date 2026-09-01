@@ -244,7 +244,8 @@
   #emobtn.on { background: #e3e3e3; border-color: #aaa; }
   textarea {
     flex: 1; border: 1px solid #ddd; border-radius: 6px; padding: 9px 10px;
-    resize: none; height: 46px; font: inherit; outline: none; background: #fff;
+    resize: none; height: 46px; max-height: 160px; overflow-y: auto;
+    font: inherit; outline: none; background: #fff;
   }
   textarea:focus { border-color: #07c160; }
   #send {
@@ -1328,6 +1329,7 @@
     if (!text && !imgs.length && !stks.length) return;
     if (!stickerId) {
       ta.value = '';
+      autoGrow();
       pending = [];
       renderPending();
     }
@@ -1417,6 +1419,12 @@
     // 回车=换行（打列表、写多行不打断），Ctrl+回车=发送
     if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); send(); }
   });
+  // 输入框随内容长高，封顶约6行，发送清空后缩回
+  function autoGrow() {
+    ta.style.height = '46px';
+    ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
+  }
+  ta.addEventListener('input', autoGrow);
   loadStickers();   // 先把表情包名字表拉下来，Claude 一上来就发表情也认得出
   loadSessions().then(loadLook).then(function () {
     if (SKEY) renderHistory(SKEY);   // 重开窗口不丢：从档案回放
