@@ -358,6 +358,8 @@ def export_md(sess):
     if not msgs:
         lines += ["（这个会话还没有留档的消息。留档从档案功能上线那天开始。）", ""]
     for m in msgs:
+        if m.get("think"):
+            continue   # md导出保持纯对话；思考在网页版/PDF里可见
         if m.get("who") == "system":
             lines += ["（系统：%s）" % m.get("text", ""), "", "---", ""]
             continue
@@ -393,12 +395,14 @@ def group_log_path(key):
     return os.path.join(GROUPS_DIR, key + ".jsonl")
 
 
-def append_group_msg(key, who, name, text, imgs=None, stk=None):
+def append_group_msg(key, who, name, text, imgs=None, stk=None, think=False):
     rec = {"who": who, "name": name, "text": text, "ts": int(time.time())}
     if imgs:
         rec["imgs"] = imgs
     if stk:
         rec["stk"] = stk
+    if think:
+        rec["think"] = True
     append_jsonl(group_log_path(key), rec)
 
 
@@ -424,8 +428,8 @@ def read_group_msgs(key, start):
 def transcript_text(msgs):
     out = []
     for m in msgs:
-        if m.get("who") == "system":
-            continue   # 系统灰条只给人看，不进成员的耳朵
+        if m.get("who") == "system" or m.get("think"):
+            continue   # 系统灰条与思考只给人看，不进成员的耳朵
         line = "%s: %s" % (m.get("name", "?"), m.get("text", ""))
         if m.get("stk"):
             line += " [表情包:%s]" % ",".join(
@@ -456,7 +460,7 @@ def group_intro(member_name, all_names):
 # 缺什么都不影响软壳本体，点📞时才检查。
 VOICE_DIR = os.path.join(DIR, "voice")
 VOICE = {"thread": None, "stop": False, "queue": [], "err": "",
-         "lock": threading.Lock()}
+         "mute": False, "flush": False, "lock": threading.Lock()}
 
 
 def voice_missing():
@@ -500,6 +504,14 @@ def voice_worker():
         with sd.InputStream(channels=1, dtype="float32", samplerate=16000) as stream:
             while not VOICE["stop"]:
                 samples, _ = stream.read(n_read)
+                if VOICE.get("flush"):
+                    VOICE["flush"] = False
+                    while not vad.empty():
+                        vad.pop()
+                    with VOICE["lock"]:
+                        VOICE["queue"] = []
+                if VOICE.get("mute"):
+                    continue   # 播报期间麦克风听到的都是自己的喇叭，直接丢
                 vad.accept_waveform(samples.reshape(-1))
                 while not vad.empty():
                     seg = vad.front.samples
@@ -872,7 +884,8 @@ class Handler(BaseHTTPRequestHandler):
             if (q.get("stat") or [""])[0]:
                 # 只要统计不要全文：字数计数在服务端算，档案再大前端也不用拉
                 cu = sum(len(m.get("text") or "") for m in msgs if m.get("who") == "user")
-                cb = sum(len(m.get("text") or "") for m in msgs if m.get("who") != "user")
+                cb = sum(len(m.get("text") or "") for m in msgs
+                         if m.get("who") not in ("user", "system") and not m.get("think"))
                 self._send_bytes(json.dumps(
                     {"total": len(msgs), "chars_user": cu, "chars_bot": cb},
                     ensure_ascii=False).encode("utf-8"),
@@ -988,11 +1001,25 @@ class Handler(BaseHTTPRequestHandler):
             if not (th and th.is_alive()):
                 VOICE["stop"] = False
                 VOICE["err"] = ""
+                VOICE["mute"] = False
+                VOICE["flush"] = False
                 with VOICE["lock"]:
                     VOICE["queue"] = []
                 th = threading.Thread(target=voice_worker, daemon=True)
                 VOICE["thread"] = th
                 th.start()
+            self._send_bytes(b'{"ok": true}', "application/json; charset=utf-8")
+            return
+        if self.path == "/voice/mute":
+            n = int(self.headers.get("Content-Length", 0))
+            try:
+                p = json.loads(self.rfile.read(n).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                p = {}
+            on = bool(p.get("on"))
+            VOICE["mute"] = on
+            if not on:
+                VOICE["flush"] = True   # 开麦前清掉播报期间攒的残段
             self._send_bytes(b'{"ok": true}', "application/json; charset=utf-8")
             return
         if self.path == "/voice/stop":
@@ -1426,7 +1453,6 @@ class Handler(BaseHTTPRequestHandler):
             last_text = ""
             err_ev = None
             round_texts = []
-            round_thinks = []
             try:
                 for line in proc.stdout:
                     line = line.strip()
@@ -1440,7 +1466,10 @@ class Handler(BaseHTTPRequestHandler):
                         if ev.get("kind") == "session" and ev.get("id"):
                             new_sid = ev["id"]
                         elif ev.get("kind") == "thinking":
-                            round_thinks.append(ev.get("text") or "")
+                            append_jsonl(history_path(skey),
+                                         {"who": "claude", "name": "Claude", "think": True,
+                                          "text": ev.get("text") or "",
+                                          "ts": int(time.time())})
                         elif ev.get("kind") == "text":
                             last_text = ev["text"]
                             round_texts.append(ev["text"])
@@ -1479,12 +1508,6 @@ class Handler(BaseHTTPRequestHandler):
                 self._emit({"kind": "stats", "tin": 0, "tout": 0, "cr": 0, "cc": 0,
                             "ms": int((time.time() - t_round) * 1000), "cut": True})
                 self._finish_session(skey, new_sid, raw_text, last_text)
-                if not round_texts and round_thinks:
-                    # 抢救半成品：正文没来得及出，至少把最后的思考片段留档
-                    append_jsonl(history_path(skey),
-                                 {"who": "claude", "name": "Claude", "think": True,
-                                  "text": "（中断前的思考片段）" + round_thinks[-1][-800:],
-                                  "ts": int(time.time())})
                 # 打断时机决定这条消息有没有进模型记忆——两种结果要说清楚
                 stop_note = ("已停止（这条消息已进入会话记忆，下轮它可能还记得）"
                              if (emitted or new_sid) else
@@ -1555,6 +1578,7 @@ class Handler(BaseHTTPRequestHandler):
         drainer = threading.Thread(target=self._drain_stderr, args=(proc, err_buf), daemon=True)
         drainer.start()
         new_sid, texts = None, []
+        thinks = []
         t0 = time.time()
         saw_stats = False
         try:
@@ -1572,6 +1596,8 @@ class Handler(BaseHTTPRequestHandler):
                         continue
                     if ev.get("kind") == "stats":
                         saw_stats = True
+                    if ev.get("kind") == "thinking":
+                        thinks.append(ev.get("text") or "")
                     ev["member"] = minfo
                     if ev.get("kind") == "text":
                         texts.append(ev["text"])
@@ -1595,7 +1621,7 @@ class Handler(BaseHTTPRequestHandler):
             except (ConnectionError, OSError):
                 pass
         return {"text": "\n".join(texts).strip(), "sid": new_sid,
-                "stopped": stopped, "rc": proc.returncode,
+                "thinks": thinks, "stopped": stopped, "rc": proc.returncode,
                 "err": ("".join(err_buf)).strip()[-800:]}
 
     def _member_prompt(self, gkey, member, all_names, images, fresh):
@@ -1689,6 +1715,9 @@ class Handler(BaseHTTPRequestHandler):
                             if mm.get("name") == m["name"]:
                                 if r["sid"]:
                                     mm["sid"] = r["sid"]
+                                for tk in r.get("thinks") or []:
+                                    append_group_msg(gkey, "member", m["name"],
+                                                     tk, think=True)
                                 if r["text"]:
                                     append_group_msg(gkey, "member", m["name"],
                                                      canonicalize_stickers(r["text"]))

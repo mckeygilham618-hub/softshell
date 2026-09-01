@@ -381,10 +381,14 @@
   <div class="mi" data-voice="local-male"><span>本地男声</span><span class="chk">✓</span></div>
   <div class="mi" data-voice="zh-HK-WanLungNeural"><span>雲龍 · 粤语男声</span><span class="chk">✓</span></div>
   <div class="mtitle">多语种（联网）</div>
-  <div class="mi" data-voice="en-US-AriaNeural"><span>Aria · 英语美音</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="en-GB-SoniaNeural"><span>Sonia · 英语英音</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="ja-JP-NanamiNeural"><span>七海 · 日语</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="ko-KR-SunHiNeural"><span>善熙 · 韩语</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="en-US-AriaNeural"><span>Aria · 美音女声</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="en-US-AndrewNeural"><span>Andrew · 美音男声</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="en-GB-SoniaNeural"><span>Sonia · 英音女声</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="en-GB-RyanNeural"><span>Ryan · 英音男声</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="ja-JP-NanamiNeural"><span>七海 · 日语女声</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="ja-JP-KeitaNeural"><span>圭太 · 日语男声</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="ko-KR-SunHiNeural"><span>善熙 · 韩语女声</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="ko-KR-InJoonNeural"><span>仁俊 · 韩语男声</span><span class="chk">✓</span></div>
 </div>
 <div class="popmenu" id="effortmenu">
   <div class="mtitle">Effort</div>
@@ -1017,7 +1021,10 @@
     } else {
       var mem = m.who === 'member'
         ? { name: m.name || '', avatar: HIST_AVATARS[m.name] || '' } : null;
-      if (m.think) rows = [bubble('thought', md(m.text || ''))];   // 中断抢救的思考片段
+      if (m.think) {
+        rows = [bubble('thought',
+          (m.who === 'member' ? esc(m.name) + '：' : '') + md(m.text || ''))];
+      }
       else rows = botSay(m.text || '', mem);
       (m.stk || []).forEach(function (x) { rows.push(nakedSticker('bot', x, mem)); });
     }
@@ -1376,12 +1383,29 @@
       }, 150);
     } catch (e) { done(); }
   }
+  function muteMic(on) {
+    if (!CALL.on) return;   // 没在通话不用管麦克风
+    fetch('/voice/mute', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ on: on ? 1 : 0 })
+    }).catch(function () {});
+  }
   function speak(text, onend) {
     var clean = ttsClean(text);
     if (!clean.trim()) { if (onend) onend(); return; }
     var vid = curVoiceId();
     ttsBusy = true;
-    var done = function () { ttsBusy = false; if (onend) onend(); };
+    muteMic(true);   // 播报期间闭麦：试听词和朗读声再也进不了麦克风
+    var fired = false;
+    var done = function () {
+      if (fired) return;
+      fired = true;
+      setTimeout(function () {   // 稍等余音散去再开麦，桥接开麦时会顺带清残段
+        muteMic(false);
+        ttsBusy = false;
+        if (onend) onend();
+      }, 350);
+    };
     if (vid.indexOf('local-') === 0) { speakLocal(clean, vid, done); return; }
     // 在线神经嗓音：桥接代理edge-tts；没装/断网自动降级本地女声
     fetch('/tts', {
@@ -1413,13 +1437,7 @@
       var replyText = CALL.reply.join('。');
       if (replyText) {
         setVoiceState('在说');
-        speak(replyText, function () {
-          // 外放时麦克风会听见自己刚才说的话——丢弃朗读期间攒下的误识别
-          setTimeout(function () {
-            fetch('/voice/poll').catch(function () {});
-            setVoiceState('在听');
-          }, 500);
-        });
+        speak(replyText, function () { setVoiceState('在听'); });
       } else {
         setVoiceState('在听');
       }
