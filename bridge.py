@@ -555,6 +555,19 @@ def call_reader():
             t = obj.get("type")
             if t == "stream_event":
                 ev = obj.get("event") or {}
+                if ev.get("type") == "content_block_start":
+                    cb = ev.get("content_block") or {}
+                    bt = cb.get("type")
+                    if bt == "thinking":
+                        _call_emit({"kind": "status", "text": "思考中",
+                                    "turn": CALLP["turn"]})
+                    elif bt == "tool_use":
+                        _call_emit({"kind": "status",
+                                    "text": "正在用 " + (cb.get("name") or "工具"),
+                                    "turn": CALLP["turn"]})
+                    elif bt == "text":
+                        _call_emit({"kind": "status", "text": "组织语言中",
+                                    "turn": CALLP["turn"]})
                 if ev.get("type") == "content_block_delta":
                     d = ev.get("delta") or {}
                     if d.get("type") == "text_delta":
@@ -563,6 +576,8 @@ def call_reader():
             elif t == "system" and obj.get("subtype") == "init":
                 if obj.get("session_id"):
                     CALLP["sid"] = obj["session_id"]
+                _call_emit({"kind": "status", "text": "已连接",
+                            "turn": CALLP["turn"]})
             elif t == "assistant":
                 for block in (obj.get("message") or {}).get("content", []):
                     bt = block.get("type")
@@ -1201,6 +1216,8 @@ class Handler(BaseHTTPRequestHandler):
             if CALLP["turn"] == 0 and not CALLP.get("sid"):
                 send_text += "\n\n" + intro_text(skey)   # 新会话链的开场白
             CALLP["turn"] += 1
+            _call_emit({"kind": "status", "text": "已送达，等待Claude响应",
+                        "turn": CALLP["turn"]})
             try:
                 proc.stdin.write(json.dumps({
                     "type": "user",

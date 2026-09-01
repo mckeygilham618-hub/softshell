@@ -262,6 +262,11 @@
   #cname { font-size: 20px; font-weight: 600; }
   #cstatus { font-size: 14px; color: #9fd4ae; min-height: 20px; }
   #ctimer { font-size: 13px; color: #7f938a; }
+  #cheard { font-size: 14px; color: #a6e3b8; max-width: 78vw; min-height: 20px; }
+  #csub {
+    font-size: 14px; line-height: 1.7; color: #cfd9d2; max-width: 78vw;
+    max-height: 26vh; overflow-y: auto; text-align: left; white-space: pre-wrap;
+  }
   #hangup {
     margin-top: 18px; width: 64px; height: 64px; border-radius: 50%;
     border: 0; background: #e64340; color: #fff; font-size: 26px;
@@ -355,6 +360,8 @@
   <div id="cavatar"><img id="cavimg" style="display:none"></div>
   <div id="cname">Claude</div>
   <div id="cstatus">连接中…</div>
+  <div id="cheard"></div>
+  <div id="csub"></div>
   <div id="ctimer">00:00</div>
   <button id="hangup" title="挂断">📵</button>
   <div id="chint">开口即说 · 它讲话时你说一句它就闭嘴听你的</div>
@@ -1401,7 +1408,17 @@
                 evT: null, spT: null, tmT: null, t0: 0,
                 turn: 0, queue: [], playing: false, cur: null };
 
-  function setCallStatus(s) { document.getElementById('cstatus').textContent = s; }
+  var callStatBase = '', callStatT0 = 0;
+  function setCallStatus(s) {
+    callStatBase = s;
+    callStatT0 = Date.now();
+    paintCallStatus();
+  }
+  function paintCallStatus() {
+    var sec = Math.floor((Date.now() - callStatT0) / 1000);
+    document.getElementById('cstatus').textContent =
+      callStatBase + (sec >= 3 ? '（' + sec + 's）' : '');
+  }
   function showOverlay() {
     var cur = SESSIONS.filter(function (x) { return x.key === SKEY; })[0];
     document.getElementById('cname').textContent = (cur && cur.name) || 'Claude';
@@ -1415,7 +1432,10 @@
     CALL2.tmT = setInterval(function () {
       var s = Math.floor((Date.now() - CALL2.t0) / 1000);
       tm.textContent = ('0' + Math.floor(s / 60)).slice(-2) + ':' + ('0' + s % 60).slice(-2);
+      paintCallStatus();   // 状态计时一起走：卡在哪一步、卡了几秒，一目了然
     }, 1000);
+    document.getElementById('cheard').textContent = '';
+    document.getElementById('csub').textContent = '';
     document.getElementById('calloverlay').classList.add('open');
   }
   function hideOverlay() {
@@ -1433,7 +1453,7 @@
   function playNextSentence() {
     if (!CALL2.on || CALL2.playing || !CALL2.queue.length) return;
     CALL2.playing = true;
-    setCallStatus('在说');
+    setCallStatus('正在开嗓');   // 取语音要一两秒，声音真响了才叫"在说"
     var sent = CALL2.queue.shift();
     var next = function () {
       CALL2.playing = false;
@@ -1445,6 +1465,7 @@
     var clean = ttsClean(sent);
     if (!clean.trim()) { next(); return; }
     if (vid.indexOf('local-') === 0) {
+      setCallStatus('在说');
       speakLocal(clean, vid, next);
       return;
     }
@@ -1458,8 +1479,8 @@
       if (!CALL2.on) { next(); return; }
       CALL2.cur = new Audio(URL.createObjectURL(b));
       CALL2.cur.onended = CALL2.cur.onerror = next;
-      CALL2.cur.play().catch(next);
-    }).catch(function () { speakLocal(clean, 'local-female', next); });
+      CALL2.cur.play().then(function () { setCallStatus('在说'); }).catch(next);
+    }).catch(function () { setCallStatus('在说'); speakLocal(clean, 'local-female', next); });
   }
 
   async function pumpUserSpeech() {
@@ -1469,12 +1490,16 @@
       if (j.err) { chip('语音故障：' + esc(j.err)); endCall2(); return; }
       if (!j.text) return;
       stopCallAudio();          // 打断：你开口，它闭嘴
-      setCallStatus('在想');
+      document.getElementById('cheard').textContent = '你说：' + j.text;
+      setCallStatus('发送中');
       var r = await (await fetch('/call/say', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: j.text })
       })).json();
-      if (r && r.turn) CALL2.turn = r.turn;
+      if (r && r.turn) {
+        CALL2.turn = r.turn;
+        document.getElementById('csub').textContent = '';   // 新一轮，字幕清屏
+      }
     } catch (e) {}
   }
 
@@ -1484,7 +1509,14 @@
       var j = await (await fetch('/call/events')).json();
       (j.events || []).forEach(function (ev) {
         if (ev.kind === 'say') {
-          if (ev.turn === CALL2.turn) { CALL2.queue.push(ev.text); playNextSentence(); }
+          if (ev.turn === CALL2.turn) {
+            // 字幕先上屏：就算之后被你打断没念完，说了什么也看得见
+            var cs = document.getElementById('csub');
+            cs.textContent += (cs.textContent ? '\n' : '') + ev.text;
+            cs.scrollTop = cs.scrollHeight;
+            CALL2.queue.push(ev.text);
+            playNextSentence();
+          }
         } else if (ev.kind === 'status') {
           if (ev.turn === CALL2.turn && !CALL2.playing) setCallStatus(ev.text);
         } else if (ev.kind === 'turn_end') {
