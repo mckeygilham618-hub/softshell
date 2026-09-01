@@ -120,28 +120,30 @@ def look_state_line(skey):
 LAST_LOOK_SIG = {}
 
 
-# 每段新对话的第一条消息带上这段。不带的话，新会话里的Claude不知道自己也能发表情包、换头像。
-# 这里故意不列出文件夹里有哪些图：判断权交给模型，它用不上就不必花token去翻。
+# 每段新对话的第一条消息带上这段。不带的话，新会话里的Claude不知道自己能发表情包、
+# 换头像，也答不上用户关于软壳界面的提问。语气平实：介绍功能，不诱导动作。
 def intro_text(skey):
     return (
-        "(这是「Softshell」窗口，按聊天软件的方式显示：支持粗体、代码块、表格和列表，"
-        "但气泡里更适合短句分段的聊天式表达，长篇标题层级不好读。\n"
-        + STICKER_DIR + " 里有表情包，如果你认为需要发表情包，"
-        "可以去翻看那个文件夹，以写 [[表情:xxx]] 来输出表情包给用户，"
-        "xxx 是图片的文件名（带不带后缀都认）。"
-        "只写你翻看后确认存在的文件名——没翻过就别猜名字，猜错会原样穿帮成文字。"
-        "表情包请单独占一行发送："
-        "那样它会像微信一样显示成独立的一条表情消息，不带文字气泡框；"
-        "夹在句子中间写则嵌在文字里。直接打 Unicode emoji 也可以。"
-        "如果文件夹里没有你想要的那个表情，你可以用文字写出自己的表情和动作，像RP那样；"
-        "也可以直接跟用户说，能不能在表情包文件夹里给你加一个XX表情，"
-        "或者请用户往里加头像图、聊天背景图。\n"
-        "表情包文件夹里除了表情，可能还混着头像图和聊天背景图。" + look_state_line(skey) +
-        "用户要求换头像或聊天背景时：List文件名找图就行，不必读图片内容；"
-        "认不出用户说的是哪张，就直接问文件名。"
-        "然后把「子文件夹/文件名.后缀」写进 " + (look_path(skey) or STATE_FILE) +
-        " 的对应键：avatar_claude / avatar_user / background（JSON对象，没有该文件就新建）。"
-        "写完不用做别的，你回复结束时窗口自动刷新；把键置空就恢复默认。)"
+        "(这是「Softshell 软壳」聊天窗口，你的输出按聊天软件方式显示：支持粗体、"
+        "代码块、表格和列表，但更适合短句分段的聊天式表达。\n"
+        "【界面功能】用户问起时你要答得上来：左侧栏可开多个会话、可拉群聊"
+        "（群里@成员名字点名发言）；右键会话名可以改名、置顶、导出聊天记录"
+        "（md文件，存到软壳目录的exports文件夹）、删除；标题栏🔍搜索本会话"
+        "聊天记录（全文/图片与表情包/链接/文件路径四类）；运行中按Esc或■随时打断；"
+        "发图用📎按钮或Ctrl+V粘贴；底部状态栏可切换模型和effort（下一条消息生效），"
+        "左下角显示每轮token消耗；聊天记录自动留档在本地，重开窗口自动回放。\n"
+        "【表情包】" + STICKER_DIR + " 文件夹里放着表情包，用到时再翻看即可。"
+        "发送方式：写 [[表情:文件名]]（带不带后缀都认），单独占一行会显示成"
+        "微信式的独立表情消息，夹在句中则嵌在文字里；只写你翻看后确认存在的文件名，"
+        "猜错会穿帮成文字；直接打emoji也行，或像RP那样用文字写表情动作；"
+        "缺什么表情可以请用户往文件夹里加图。\n"
+        "【换装】表情包文件夹里可能混着头像图和聊天背景图。" + look_state_line(skey) +
+        "用户要求换头像或聊天背景时：List文件名找图（不必读图片内容），"
+        "把「子文件夹/文件名.后缀」写进 " + (look_path(skey) or STATE_FILE) +
+        " 的对应键：avatar_claude / avatar_user / background（JSON对象，"
+        "没有该文件就新建）；写完不用做别的，你回复结束时窗口自动刷新，键置空恢复默认。"
+        "用户想用自己的新图片换装时，请用户把图存到桌面并告诉你文件名，"
+        "你自己把它复制进表情包文件夹，再照上面的办法写外观文件。)"
     )
 
 
@@ -616,12 +618,13 @@ def translate(obj):
         if obj.get("is_error") and obj.get("result"):
             yield {"kind": "error", "text": str(obj.get("result"))[:800]}
         u = obj.get("usage") or {}
-        tin = ((u.get("input_tokens") or 0) + (u.get("cache_read_input_tokens") or 0) +
-               (u.get("cache_creation_input_tokens") or 0))
+        cr = u.get("cache_read_input_tokens") or 0
+        cc = u.get("cache_creation_input_tokens") or 0
+        tin = (u.get("input_tokens") or 0) + cr + cc
         tout = u.get("output_tokens") or 0
         if tout or obj.get("duration_ms"):
-            # 额度敏感的用户想知道每轮花了多少——数据本来就在流里，捡起来就行
-            yield {"kind": "stats", "tin": tin, "tout": tout,
+            # 额度敏感的用户想知道每轮花了多少——缓存命中要拆开给，才能自证成本
+            yield {"kind": "stats", "tin": tin, "tout": tout, "cr": cr, "cc": cc,
                    "ms": obj.get("duration_ms") or 0}
 
 
@@ -1025,6 +1028,7 @@ class Handler(BaseHTTPRequestHandler):
         attempt = 0
         while True:
             attempt += 1
+            t_round = time.time()
             cmd = list(base)
             if sid:
                 cmd += ["--resume", sid]
@@ -1099,7 +1103,10 @@ class Handler(BaseHTTPRequestHandler):
             if bad_stk:
                 STK_WARN[skey] = bad_stk   # 下一轮开头悄悄提醒它
             if was_stopped:
-                # 用户按了停止：不要当成会话失效去重试，否则中断白按
+                # 用户按了停止：不要当成会话失效去重试，否则中断白按。
+                # CLI被杀就不报usage了，至少把耗时和"计量不到"如实交代
+                self._emit({"kind": "stats", "tin": 0, "tout": 0, "cr": 0, "cc": 0,
+                            "ms": int((time.time() - t_round) * 1000), "cut": True})
                 self._finish_session(skey, new_sid, raw_text, last_text)
                 self._emit({"kind": "note", "text": "已停止"})
                 self._emit({"kind": "done"})
@@ -1159,6 +1166,8 @@ class Handler(BaseHTTPRequestHandler):
         drainer = threading.Thread(target=self._drain_stderr, args=(proc, err_buf), daemon=True)
         drainer.start()
         new_sid, texts = None, []
+        t0 = time.time()
+        saw_stats = False
         try:
             for line in proc.stdout:
                 line = line.strip()
@@ -1172,6 +1181,8 @@ class Handler(BaseHTTPRequestHandler):
                     if ev.get("kind") == "session" and ev.get("id"):
                         new_sid = ev["id"]
                         continue
+                    if ev.get("kind") == "stats":
+                        saw_stats = True
                     ev["member"] = minfo
                     if ev.get("kind") == "text":
                         texts.append(ev["text"])
@@ -1187,6 +1198,13 @@ class Handler(BaseHTTPRequestHandler):
         with ACTIVE_LOCK:
             stopped = ACTIVE.get(rid, {}).get("stopped", False)
             ACTIVE.pop(rid, None)
+        if stopped and not saw_stats:
+            try:
+                self._emit({"kind": "stats", "tin": 0, "tout": 0, "cr": 0, "cc": 0,
+                            "ms": int((time.time() - t0) * 1000), "cut": True,
+                            "member": minfo})
+            except (ConnectionError, OSError):
+                pass
         return {"text": "\n".join(texts).strip(), "sid": new_sid,
                 "stopped": stopped, "rc": proc.returncode,
                 "err": ("".join(err_buf)).strip()[-800:]}

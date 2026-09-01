@@ -591,7 +591,9 @@
     else if (ev.kind === 'stats') {
       roundStats.tin += ev.tin || 0;
       roundStats.tout += ev.tout || 0;
+      roundStats.cr += ev.cr || 0;
       roundStats.ms += ev.ms || 0;
+      if (ev.cut) roundStats.cut = true;
     }
     else if (ev.kind === 'session') setStatus('等待Claude响应');
     else if (ev.kind === 'status') setStatus(ev.text);
@@ -1283,12 +1285,12 @@
     btn.classList.toggle('stopping', on);
   }
 
-  var roundStats = { tin: 0, tout: 0, ms: 0 };
+  var roundStats = { tin: 0, tout: 0, cr: 0, ms: 0, cut: false };
   function fmtTok(n) { return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n); }
 
   async function send(stickerId) {
     if (busy) return;
-    roundStats = { tin: 0, tout: 0, ms: 0 };
+    roundStats = { tin: 0, tout: 0, cr: 0, ms: 0, cut: false };
     var text = stickerId ? '' : ta.value.trim();
     var imgs = stickerId ? [] : pending.slice();
     var stks = stickerId ? [stickerId] : [];
@@ -1353,8 +1355,13 @@
     }
     if (roundStats.tout || roundStats.ms) {
       document.getElementById('laststats').textContent =
-        '上轮 ↑' + fmtTok(roundStats.tin) + ' ↓' + fmtTok(roundStats.tout) +
-        ' · ' + Math.round(roundStats.ms / 1000) + 's';
+        (roundStats.cut && !roundStats.tout)
+          ? '上轮中断 · ' + Math.round(roundStats.ms / 1000) + 's（token不可计量）'
+          : '上轮 ↑' + fmtTok(roundStats.tin) +
+            (roundStats.cr ? '（缓存' + fmtTok(roundStats.cr) + '）' : '') +
+            ' ↓' + fmtTok(roundStats.tout) +
+            ' · ' + Math.round(roundStats.ms / 1000) + 's' +
+            (roundStats.cut ? '（含中断轮）' : '');
     }
     stopStatus();
     typing.remove();
