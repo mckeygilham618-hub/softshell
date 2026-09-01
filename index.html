@@ -287,8 +287,14 @@
   }
   .bubble th { background: #f6f6f6; font-weight: 600; }
   .mdh { font-weight: 700; margin: 8px 0 3px; }
-  .bubble ul { margin: 4px 0 4px 18px; padding: 0; }
+  .bubble ul, .bubble ol { margin: 4px 0 4px 18px; padding: 0; }
   .bubble li { margin: 2px 0; }
+  .bubble .bq {
+    border-left: 3px solid #d5d5d5; padding: 1px 0 1px 9px;
+    color: #777; margin: 3px 0;
+  }
+  .bubble a { color: #576b95; text-decoration: none; }
+  .bubble a:hover { text-decoration: underline; }
 </style>
 
 <div id="sidebar">
@@ -449,7 +455,11 @@
                     : '[' + name + ']';
         });
         t = t.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+        t = t.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,
+                      '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
         t = t.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+        t = t.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
+        t = t.replace(/\*([^*\n]+)\*/g, '<i>$1</i>');
         html += mdBlocks(t);
       }
     }
@@ -463,14 +473,20 @@
       : '<img style="display:none">';
     return '<div class="avatar ' + who + '">' + img + '</div>';
   }
-  /* 逐行解析：表格、标题、无序列表。输入已转义、已做完行内替换。 */
+  /* 逐行解析：表格、标题、无序/有序列表、引用。输入已转义、已做完行内替换。 */
   function mdBlocks(t) {
     var lines = t.split('\n');
-    var html = '', listBuf = [], tblBuf = [];
+    var html = '', listBuf = [], tblBuf = [], olBuf = [], olStart = 1;
     function flushList() {
       if (!listBuf.length) return;
       html += '<ul>' + listBuf.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</ul>';
       listBuf = [];
+    }
+    function flushOl() {
+      if (!olBuf.length) return;
+      html += '<ol start="' + olStart + '">' +
+              olBuf.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</ol>';
+      olBuf = [];
     }
     function flushTbl() {
       if (!tblBuf.length) return;
@@ -493,14 +509,21 @@
     }
     for (var i = 0; i < lines.length; i++) {
       var ln = lines[i], m;
-      if (/^\s*\|.*\|\s*$/.test(ln)) { flushList(); tblBuf.push(ln); continue; }
+      if (/^\s*\|.*\|\s*$/.test(ln)) { flushList(); flushOl(); tblBuf.push(ln); continue; }
       flushTbl();
-      if (m = ln.match(/^#{1,4}\s+(.*)$/)) { flushList(); html += '<div class="mdh">' + m[1] + '</div>'; continue; }
-      if (m = ln.match(/^\s*[-*•]\s+(.*)$/)) { listBuf.push(m[1]); continue; }
-      flushList();
+      if (m = ln.match(/^#{1,4}\s+(.*)$/)) { flushList(); flushOl(); html += '<div class="mdh">' + m[1] + '</div>'; continue; }
+      if (m = ln.match(/^\s*[-*•]\s+(.*)$/)) { flushOl(); listBuf.push(m[1]); continue; }
+      if (m = ln.match(/^\s*(\d{1,3})[.、]\s+(.*)$/)) {
+        flushList();
+        if (!olBuf.length) olStart = Number(m[1]) || 1;
+        olBuf.push(m[2]);
+        continue;
+      }
+      if (m = ln.match(/^\s*&gt;\s?(.*)$/)) { flushList(); flushOl(); html += '<div class="bq">' + m[1] + '</div>'; continue; }
+      flushList(); flushOl();
       html += ln + (i < lines.length - 1 ? '<br>' : '');
     }
-    flushList(); flushTbl();
+    flushList(); flushOl(); flushTbl();
     return html;
   }
 
