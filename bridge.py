@@ -466,10 +466,13 @@ CALLP = {"proc": None, "skey": "", "reader": None, "events": [],
 SENT_SPLIT_RE = re.compile(r"[^。！？!?\n；;]*[。！？!?\n；;]+")
 CALL_HINT = (
     "(语音通话模式：用户正在跟你打电话，你的回复会被逐句转成语音念出来。"
-    "请：①回复短一点，按口语节奏说话，别用markdown排版、列表和长段落；"
-    "②用户的话是语音转文字来的，会出现吃字、错别字、同音字、重复字——"
+    "①开头先用一两个字的语气词接茬（嗯、好、哈、行这类），再说正文——"
+    "第一句越短，用户越早听到你的声音；"
+    "②全程口语短句，绝对不要换行、不要分段、不要markdown排版和列表，"
+    "像打电话一样一句接一句说；回复整体要短，两三句说完最好；"
+    "③用户的话是语音转文字来的，会出现吃字、错别字、同音字、重复字——"
     "先按上下文猜最合理的意思，拿不准就直接跟用户确认，不要瞎脑补；"
-    "③听不懂就问。)"
+    "④听不懂就问。)"
 )
 CALL_ENDED = set()   # 挂断过电话的会话：下一条文字消息告知它已回到打字聊天
 
@@ -646,8 +649,7 @@ def call_reader():
                             pending += block["text"]
                             flush_pending(force=True)
                     elif bt == "thinking" and block.get("thinking"):
-                        _archive_call_rec(CALLP["skey"], block["thinking"],
-                                          think=True)
+                        # 通话模式思考不落档（effort=low本来也少），只报个状态
                         _call_emit({"kind": "status", "text": "在想",
                                     "turn": CALLP["turn"]})
             elif t == "result":
@@ -1228,8 +1230,7 @@ class Handler(BaseHTTPRequestHandler):
                    "--dangerously-skip-permissions"]
             if valid_model(sess.get("model") or ""):
                 cmd += ["--model", sess["model"]]
-            if (sess.get("effort") or "") in EFFORTS:
-                cmd += ["--effort", sess["effort"]]
+            cmd += ["--effort", "low"]   # 通话要的是秒回：模型照用户选的，effort一律low
             if sess.get("sid"):
                 cmd += ["--resume", sess["sid"]]
             try:

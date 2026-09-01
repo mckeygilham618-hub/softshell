@@ -1406,7 +1406,44 @@
   var callbtn = document.getElementById('callbtn');
   var CALL2 = { on: false, ac: null, node: null, stream: null,
                 evT: null, spT: null, tmT: null, t0: 0,
-                turn: 0, queue: [], playing: false, cur: null };
+                turn: 0, queue: [], playing: false, cur: null,
+                sentAt: 0, turnAudio: false, fillers: [],
+                fillerActive: null, fillerPlayedTurn: -1, wd: null };
+  // 垫音词：学GPT——等待间隙先应一声，盖住模型首token的空白
+  var FILLER_TEXTS = ['嗯……', '我想想哈。', '稍等哈。'];
+  function prefetchFillers() {
+    CALL2.fillers = [];
+    var vid = curVoiceId();
+    if (vid.indexOf('local-') === 0) return;   // 本地嗓音现念不用备货
+    FILLER_TEXTS.forEach(function (tx) {
+      fetch('/tts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: tx, voice: vid, rate: curRate() })
+      }).then(function (r) { return r.ok ? r.blob() : null; })
+        .then(function (b) { if (b) CALL2.fillers.push(URL.createObjectURL(b)); })
+        .catch(function () {});
+    });
+  }
+  function stopFiller() {
+    if (CALL2.fillerActive) {
+      try { CALL2.fillerActive.pause(); } catch (e) {}
+      CALL2.fillerActive = null;
+    }
+  }
+  function playFiller() {
+    if (CALL2.playing || CALL2.queue.length) return;
+    CALL2.fillerPlayedTurn = CALL2.turn;
+    if (CALL2.fillers.length) {
+      CALL2.fillerActive = new Audio(
+        CALL2.fillers[Math.floor(Math.random() * CALL2.fillers.length)]);
+      CALL2.fillerActive.play().catch(function () {});
+    } else {
+      var vid = curVoiceId();
+      speakLocal(FILLER_TEXTS[0],
+                 vid === 'local-male' ? 'local-male' : 'local-female',
+                 function () {});
+    }
+  }
 
   var callStatBase = '', callStatT0 = 0;
   function setCallStatus(s) {
@@ -1452,15 +1489,23 @@
 
   function playNextSentence() {
     if (!CALL2.on || CALL2.playing || !CALL2.queue.length) return;
+    stopFiller();
     CALL2.playing = true;
+    CALL2.turnAudio = true;
     setCallStatus('正在开嗓');   // 取语音要一两秒，声音真响了才叫"在说"
     var sent = CALL2.queue.shift();
+    var fired = false;
     var next = function () {
+      if (fired) return;
+      fired = true;
+      if (CALL2.wd) { clearTimeout(CALL2.wd); CALL2.wd = null; }
       CALL2.playing = false;
       CALL2.cur = null;
       if (CALL2.queue.length) playNextSentence();
       else if (CALL2.on) setCallStatus('在听');
     };
+    // 哑火看门狗：音频既不响也不报错时，按句长限时强制翻页
+    CALL2.wd = setTimeout(next, 5000 + sent.length * 350);
     var vid = curVoiceId();
     var clean = ttsClean(sent);
     if (!clean.trim()) { next(); return; }
@@ -1490,6 +1535,9 @@
       var j = await (await fetch('/voice/poll')).json();
       if (j.err) { chip('语音故障：' + esc(j.err)); endCall2(); return; }
       if (j.text) {
+        // 噪音防线：它正说着话时，一两个字的碎音不当打断
+        if ((CALL2.playing || CALL2.queue.length) &&
+            j.text.replace(/[，。！？!?、\s]/g, '').length < 2) return;
         stopCallAudio();          // 打断：你开口，它闭嘴
         pendingSpeech += (pendingSpeech ? ' ' : '') + j.text;
         pendingT = Date.now();
@@ -1510,6 +1558,8 @@
       })).json();
       if (r && r.turn) {
         CALL2.turn = r.turn;
+        CALL2.sentAt = Date.now();
+        CALL2.turnAudio = false;
         document.getElementById('csub').textContent = '';   // 新一轮，字幕清屏
       }
     } catch (e) {}
@@ -1517,11 +1567,16 @@
 
   async function pumpEvents() {
     if (!CALL2.on) return;
+    // 等太久还没出声：放一句垫音词稳住场（每轮最多一次）
+    if (CALL2.sentAt && !CALL2.turnAudio && !CALL2.playing &&
+        CALL2.fillerPlayedTurn !== CALL2.turn &&
+        Date.now() - CALL2.sentAt > 2500) playFiller();
     try {
       var j = await (await fetch('/call/events')).json();
       (j.events || []).forEach(function (ev) {
         if (ev.kind === 'say') {
-          if (ev.turn === CALL2.turn) {
+          if (ev.turn >= CALL2.turn) {   // >=容忍轮次号竞态，只丢真正过期的
+            CALL2.turn = ev.turn;
             // 字幕先上屏：就算之后被你打断没念完，说了什么也看得见
             var cs = document.getElementById('csub');
             cs.textContent += (cs.textContent ? '\n' : '') + ev.text;
@@ -1591,6 +1646,10 @@
     CALL2.on = true;
     CALL2.turn = 0;
     CALL2.queue = [];
+    CALL2.sentAt = 0;
+    CALL2.turnAudio = false;
+    CALL2.fillerPlayedTurn = -1;
+    prefetchFillers();   // 备好"嗯……"垫音词，等待间隙先应一声
     callbtn.classList.add('oncall');
     showOverlay();
     setCallStatus('在听');
@@ -1602,6 +1661,9 @@
     if (!CALL2.on && !document.getElementById('calloverlay').classList.contains('open')) return;
     CALL2.on = false;
     pendingSpeech = '';
+    CALL2.sentAt = 0;
+    stopFiller();
+    if (CALL2.wd) { clearTimeout(CALL2.wd); CALL2.wd = null; }
     if (CALL2.spT) clearInterval(CALL2.spT);
     if (CALL2.evT) clearInterval(CALL2.evT);
     stopCallAudio();
