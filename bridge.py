@@ -785,7 +785,24 @@ class Handler(BaseHTTPRequestHandler):
             if not e:
                 self.send_error(404)
                 return
-            out = {"list": read_jsonl(archive_of(e)),
+            msgs = read_jsonl(archive_of(e))
+            for i, m in enumerate(msgs):
+                m["idx"] = i          # 稳定锚点：档案里的行号（追加式文件，行号不漂）
+            kw = (q.get("q") or [""])[0]
+            if kw:
+                kl = kw.lower()
+                msgs = [m for m in msgs if kl in str(m.get("text", "")).lower()]
+            total = len(msgs)
+            try:
+                off = max(0, int((q.get("offset") or ["0"])[0]))
+                lim = int((q.get("limit") or ["0"])[0])
+            except ValueError:
+                off, lim = 0, 0
+            if off:
+                msgs = msgs[off:]
+            if lim > 0:
+                msgs = msgs[:lim]
+            out = {"list": msgs, "total": total,
                    "type": e.get("type", "chat")}
             if e.get("type") == "group":
                 av = {}
@@ -920,6 +937,19 @@ class Handler(BaseHTTPRequestHandler):
                     name = str(p.get("name", "")).strip()[:50]
                     if name:
                         e["name"] = name
+                        if e.get("type") != "group":
+                            # 同步群里分身的登记名：改完名@新名字才叫得到人
+                            for g2 in d["list"]:
+                                for mm in (g2.get("members") or []):
+                                    if mm.get("srckey") == key:
+                                        nn = name
+                                        others = [x["name"] for x in g2["members"]
+                                                  if x is not mm]
+                                        i2 = 2
+                                        while nn in others:
+                                            nn = name + str(i2)
+                                            i2 += 1
+                                        mm["name"] = nn
                 elif self.path == "/session/pin":
                     if "pin" not in p:
                         self.send_error(400)   # 缺字段就报错，别把漏写当"取消置顶"
@@ -999,7 +1029,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             payload = json.loads(self.rfile.read(n).decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
-            self.send_error(400)
+            self._ndjson_error("请求体不是有效的JSON")
             return
         rid = str(payload.get("rid", "")) or ("r%d" % int(time.time() * 1000))
         text = str(payload.get("text", "")).strip()
@@ -1023,7 +1053,7 @@ class Handler(BaseHTTPRequestHandler):
                 stk_rels.append(str(rel).replace("\\", "/"))
         n_stickers = len(stk_rels)
         if not text and not images:
-            self.send_error(400)
+            self._ndjson_error("空消息：没有可发送的内容")
             return
 
         skey = str(payload.get("skey", ""))
@@ -1048,6 +1078,16 @@ class Handler(BaseHTTPRequestHandler):
             with SENDING_LOCK:
                 SENDING.discard(skey)
         return
+
+    def _ndjson_error(self, msg):
+        """/send 是流式接口：出错也按流的约定回，别甩HTML错误页给脚本"""
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.emit_lock = threading.Lock()
+        self._emit({"kind": "error", "text": msg})
+        self._emit({"kind": "done"})
 
     def _claim_send(self, skey):
         """同一会话一次只许一轮在跑。抢不到锁就体面拒绝，消息不落档不烧额度。"""
