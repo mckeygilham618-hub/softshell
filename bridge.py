@@ -634,7 +634,7 @@ def call_reader():
             elif t == "system" and obj.get("subtype") == "init":
                 if obj.get("session_id"):
                     CALLP["sid"] = obj["session_id"]
-                _call_emit({"kind": "status", "text": "已连接",
+                _call_emit({"kind": "status", "text": "对方已接听",
                             "turn": CALLP["turn"]})
             elif t == "assistant":
                 for block in (obj.get("message") or {}).get("content", []):
