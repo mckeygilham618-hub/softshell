@@ -560,14 +560,15 @@
     return d;
   }
   function botSay(text, member) {
-    var rows = [], buf = [];
+    var rows = [], buf = [], inFence = false;
     function flush() {
       var t = buf.join('\n');
       if (t.trim()) rows.push(bubble('bot', md(t), member));
       buf = [];
     }
     String(text).split('\n').forEach(function (ln) {
-      var mm = ln.match(STK_LINE);
+      if (/^\s*```/.test(ln)) { inFence = !inFence; buf.push(ln); return; }
+      var mm = !inFence && ln.match(STK_LINE);   // 代码围栏里的标签是内容，不拆
       var id = mm && stkResolve(mm[1]);
       if (id) { flush(); rows.push(nakedSticker('bot', id, member)); }
       else buf.push(ln);

@@ -152,6 +152,11 @@ def intro_text(skey):
 ACTIVE = {}
 ACTIVE_LOCK = threading.Lock()
 
+# 正在发送中的会话：同一会话并发发送会让CLI的会话链分叉，
+# 后完成的一轮覆盖档案，先前那轮从模型记忆里静默蒸发——必须一轮一轮来
+SENDING = set()
+SENDING_LOCK = threading.Lock()
+
 
 def kill_tree(proc):
     """杀掉进程及其所有子进程。claude.exe 会派生子进程，
@@ -192,7 +197,7 @@ def load_sessions():
 
 def save_sessions(d):
     try:
-        d["list"].sort(key=lambda s: 0 if s.get("pin") else 1)   # 置顶优先，稳定排序
+        d["list"].sort(key=lambda s: (0 if s.get("pin") else 1, -(s.get("ts") or 0)))
         with open(SESSIONS_FILE, "w", encoding="utf-8") as f:
             json.dump(d, f, ensure_ascii=False, indent=1)
     except OSError:
@@ -570,6 +575,20 @@ def unresolved_stickers(text):
         if name not in bad:
             bad.append(name)
     return bad
+
+
+def canonicalize_stickers(text):
+    """落档前把能解析的表情标签改写成「子文件夹/文件名.后缀」完整形，
+    回放和搜索不再依赖模糊匹配；代码块围栏里的内容原样保留。"""
+    def _rep(m):
+        rel = m.group(1).replace("\\", "/")
+        hit = ((rel if sticker_path(rel) else None) or
+               find_sticker_by_name(rel) or fuzzy_sticker(rel))
+        return ("[[表情:%s]]" % hit) if hit else m.group(0)
+    parts = (text or "").split("```")
+    for i in range(0, len(parts), 2):
+        parts[i] = STK_TAG_RE.sub(_rep, parts[i])
+    return "```".join(parts)
 
 
 def stk_warn_text(bad):
@@ -977,9 +996,38 @@ class Handler(BaseHTTPRequestHandler):
                 d["active"] = sess["key"]
                 save_sessions(d)
             skey = sess["key"]
-        if sess.get("type") == "group":
-            self._handle_group(sess, text, images, up_names, stk_rels, rid)
+        if not self._claim_send(skey):
             return
+        try:
+            if sess.get("type") == "group":
+                self._handle_group(sess, text, images, up_names, stk_rels, rid)
+            else:
+                self._handle_chat(sess, skey, text, images, up_names, stk_rels,
+                                  n_stickers, rid)
+        finally:
+            with SENDING_LOCK:
+                SENDING.discard(skey)
+        return
+
+    def _claim_send(self, skey):
+        """同一会话一次只许一轮在跑。抢不到锁就体面拒绝，消息不落档不烧额度。"""
+        with SENDING_LOCK:
+            if skey in SENDING:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                self.emit_lock = threading.Lock()
+                self._emit({"kind": "error",
+                            "text": "这个会话上一轮还没说完，这条没有发出去。"
+                                    "等它说完或按■停止后再发一次。"})
+                self._emit({"kind": "done"})
+                return False
+            SENDING.add(skey)
+            return True
+
+    def _handle_chat(self, sess, skey, text, images, up_names, stk_rels,
+                     n_stickers, rid):
         raw_text = text
         sync_legacy_state(skey)   # 老会话的Claude还在往旧地址(state.json)投外观，搬过来
         urec = {"who": "user", "name": "用户", "text": raw_text, "ts": int(time.time())}
@@ -1082,7 +1130,8 @@ class Handler(BaseHTTPRequestHandler):
                             round_texts.append(ev["text"])
                             append_jsonl(history_path(skey),
                                          {"who": "claude", "name": "Claude",
-                                          "text": ev["text"], "ts": int(time.time())})
+                                          "text": canonicalize_stickers(ev["text"]),
+                                          "ts": int(time.time())})
                         if ev.get("kind") == "error":
                             err_ev = ev   # 攒着：可能要自动重开重试，别过早吓用户
                             continue
@@ -1247,7 +1296,7 @@ class Handler(BaseHTTPRequestHandler):
         append_group_msg(gkey, "user", "用户", text, imgs=up_names, stk=stk_rels)
         # @路由：长名字先匹配防前缀重叠；按@出现的位置排队——@谁在前谁先说
         hits = []
-        tmp = text
+        tmp = text.replace("＠", "@")   # 中文输入法的全角＠一视同仁
         for m in sorted(members, key=lambda x: -len(x["name"])):
             tag = "@" + m["name"]
             i = tmp.find(tag)
@@ -1291,7 +1340,8 @@ class Handler(BaseHTTPRequestHandler):
                                 if r["sid"]:
                                     mm["sid"] = r["sid"]
                                 if r["text"]:
-                                    append_group_msg(gkey, "member", m["name"], r["text"])
+                                    append_group_msg(gkey, "member", m["name"],
+                                                     canonicalize_stickers(r["text"]))
                                 if ok:
                                     _, tot = read_group_msgs(gkey, 0)
                                     mm["read"] = tot
