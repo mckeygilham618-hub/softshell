@@ -486,6 +486,54 @@ def voice_missing():
     return miss
 
 
+HOTWORDS_FILE = os.path.join(VOICE_DIR, "hotwords.txt")
+_HOTWORDS = {"mtime": 0.0, "rules": []}
+
+
+def load_hotwords():
+    """热词纠正表：ASR按词频抢答（Claude听成cloud），转写后按表映射回来。
+    文件用户可改，存盘即生效；不存在时播种默认表。"""
+    try:
+        mt = os.path.getmtime(HOTWORDS_FILE)
+    except OSError:
+        try:
+            os.makedirs(VOICE_DIR, exist_ok=True)
+            with io.open(HOTWORDS_FILE, "w", encoding="utf-8") as f:
+                f.write("# 语音热词纠正表：每行「听错的词=>该是的词」，#开头是注释\n"
+                        "# 英文按整词匹配（cloudy不受影响），中文按原样替换\n"
+                        "cloud=>Claude\n"
+                        "克劳德=>Claude\n")
+            mt = os.path.getmtime(HOTWORDS_FILE)
+        except OSError:
+            return _HOTWORDS["rules"]
+    if mt != _HOTWORDS["mtime"]:
+        rules = []
+        try:
+            for ln in io.open(HOTWORDS_FILE, encoding="utf-8-sig"):
+                ln = ln.strip()
+                if not ln or ln.startswith("#") or "=>" not in ln:
+                    continue
+                bad, good = ln.split("=>", 1)
+                bad, good = bad.strip(), good.strip()
+                if not bad or not good:
+                    continue
+                if re.fullmatch(r"[A-Za-z' ]+", bad):
+                    rules.append((re.compile(r"(?i)\b" + re.escape(bad) + r"\b"), good))
+                else:
+                    rules.append((re.compile(re.escape(bad)), good))
+        except OSError:
+            pass
+        _HOTWORDS["rules"] = rules
+        _HOTWORDS["mtime"] = mt
+    return _HOTWORDS["rules"]
+
+
+def hotword_fix(text):
+    for pat, good in load_hotwords():
+        text = pat.sub(good, text)
+    return text
+
+
 def voice_engine_up():
     """加载识别引擎（只加载一次，通话间复用）。返回错误串，空串=成功。"""
     if VOICE["rec"] is not None:
@@ -1132,7 +1180,7 @@ class Handler(BaseHTTPRequestHandler):
                         st = rec.create_stream()
                         st.accept_waveform(16000, seg)
                         rec.decode_stream(st)
-                        tx = st.result.text.strip()
+                        tx = hotword_fix(st.result.text.strip())
                         if tx:
                             texts.append(tx)
                 if texts:

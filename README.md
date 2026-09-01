@@ -104,6 +104,8 @@ pip install sherpa-onnx
    - [silero_vad.onnx](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx)（约2MB，断句用）
 3. 点📞开聊（首次会请求麦克风权限）。
 
+**热词纠正**：语音识别爱按词频抢答（比如把 Claude 听成 cloud）。第一次通话后 `voice\hotwords.txt` 会自动出现，每行一条「听错的词=>该是的词」，自己往里加就行，存盘即生效。
+
 **朗读嗓音**在底部状态栏「嗓音」里选，点击即试听，**每个会话可以绑定不同的嗓音**——给不同的 Claude 形象配不同的声线。本地男女声开箱即用；想要更好听的**在线神经嗓音**（晓晓、云希、东北小北等8款），再装一个：
 
 ```bash
