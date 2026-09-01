@@ -374,7 +374,6 @@
   <div class="mtitle">朗读嗓音（点击即试听）</div>
   <div class="mi" data-voice="female"><span>女声</span><span class="chk">✓</span></div>
   <div class="mi" data-voice="male"><span>男声</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice=""><span>浏览器默认</span><span class="chk">✓</span></div>
 </div>
 <div class="popmenu" id="effortmenu">
   <div class="mtitle">Effort</div>
@@ -1283,17 +1282,15 @@
   function setVoiceState(s) { voicestateEl.textContent = s ? '📞' + s : ''; }
 
   function pickVoice() {
-    var pref = '';
-    try { pref = localStorage.getItem('ttsVoice') || ''; } catch (e) {}
+    var pref = 'female';
+    try { pref = localStorage.getItem('ttsVoice') || 'female'; } catch (e) {}
     var vs = speechSynthesis.getVoices().filter(function (v) {
       return /^zh/i.test(v.lang);
     });
     if (!vs.length) return null;
     var wants = pref === 'male'
       ? ['Yunxi', '云希', 'Yunyang', '云扬', 'Yunjian', 'Kangkang']
-      : pref === 'female'
-        ? ['Xiaoxiao', '晓晓', 'Xiaoyi', '晓伊', 'Huihui', 'Yaoyao']
-        : [];
+      : ['Xiaoxiao', '晓晓', 'Xiaoyi', '晓伊', 'Huihui', 'Yaoyao'];
     for (var i = 0; i < wants.length; i++) {
       for (var j = 0; j < vs.length; j++) {
         if (vs[j].name.indexOf(wants[i]) >= 0) return vs[j];
@@ -1310,20 +1307,26 @@
     t = t.replace(/[*#>`|~_]{1,}/g, '');
     return t;
   }
+  var ttsBusy = false;
   function speak(text, onend) {
     try {
       var u = new SpeechSynthesisUtterance(ttsClean(text));
       var v = pickVoice();
       if (v) u.voice = v;
       u.lang = 'zh-CN';
-      u.onend = u.onerror = function () { if (onend) onend(); };
+      ttsBusy = true;
+      u.onend = u.onerror = function () { ttsBusy = false; if (onend) onend(); };
       speechSynthesis.cancel();
-      speechSynthesis.speak(u);
-    } catch (e) { if (onend) onend(); }
+      // Chromium坑：cancel后立刻speak会把这句吞掉，垫一拍再说
+      setTimeout(function () {
+        speechSynthesis.speak(u);
+        try { speechSynthesis.resume(); } catch (e2) {}
+      }, 150);
+    } catch (e) { ttsBusy = false; if (onend) onend(); }
   }
 
   async function pollVoice() {
-    if (!CALL.on || busy || speechSynthesis.speaking) return;
+    if (!CALL.on || busy || ttsBusy || speechSynthesis.speaking) return;
     try {
       var j = await (await fetch('/voice/poll')).json();
       if (j.err) { chip('语音故障：' + esc(j.err)); endCall(); return; }
@@ -1381,8 +1384,8 @@
   var voicebtn = document.getElementById('voicebtn');
   var voicemenu = document.getElementById('voicemenu');
   function paintVoiceMenu() {
-    var cur = '';
-    try { cur = localStorage.getItem('ttsVoice') || ''; } catch (e) {}
+    var cur = 'female';
+    try { cur = localStorage.getItem('ttsVoice') || 'female'; } catch (e) {}
     voicemenu.querySelectorAll('.mi[data-voice]').forEach(function (mi) {
       mi.classList.toggle('on', mi.dataset.voice === cur);
     });
