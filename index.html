@@ -903,7 +903,8 @@
     if (!cur || cur.type !== 'group') { atmenu.classList.remove('open'); return; }
     var pos = ta.selectionStart;
     if (pos > 0 && ta.value.charAt(pos - 1) === '@') {
-      var h = '<div class="mtitle">@谁发言</div>';
+      var h = '<div class="mtitle">@谁发言</div>' +
+              '<div class="mi" data-at="所有人"><span>所有人（全员依次发言）</span></div>';
       (cur.members || []).forEach(function (mm) {
         h += '<div class="mi" data-at="' + esc(mm.name) + '"><span>' +
              esc(mm.name) + '</span></div>';
@@ -953,7 +954,8 @@
     } else {
       var mem = m.who === 'member'
         ? { name: m.name || '', avatar: HIST_AVATARS[m.name] || '' } : null;
-      rows = botSay(m.text || '', mem);
+      if (m.think) rows = [bubble('thought', md(m.text || ''))];   // 中断抢救的思考片段
+      else rows = botSay(m.text || '', mem);
       (m.stk || []).forEach(function (x) { rows.push(nakedSticker('bot', x, mem)); });
     }
     rows.forEach(function (el) { if (el) el.dataset.mi = idx; });
@@ -1115,7 +1117,7 @@
     if (isGrp) {
       gh.style.display = '';
       gh.textContent = '成员：' + (cur.members || []).map(function (x) { return x.name; })
-        .join('、') + '（@名字 点名发言）';
+        .join('、') + '（@名字点名，@所有人全员发言）';
     } else { gh.style.display = 'none'; }
     var m = LOOK.model || '', e = LOOK.effort || '';
     modelbtn.textContent = m ? (MODEL_NAMES[m] || m) : '默认模型';
@@ -1296,6 +1298,8 @@
     if (busy) return;
     roundStats = { tin: 0, tout: 0, cr: 0, ms: 0, cut: false };
     var text = stickerId ? '' : ta.value.trim();
+    // 只剩零宽/空白字符＝空消息（emoji组合里的零宽连接符不受影响，这里只判空不删字）
+    if (text && !text.replace(/[​‌‍⁠﻿\s]+/g, '')) text = '';
     var imgs = stickerId ? [] : pending.slice();
     var stks = stickerId ? [stickerId] : [];
     if (!text && !imgs.length && !stks.length) return;

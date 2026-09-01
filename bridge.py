@@ -130,8 +130,9 @@ def intro_text(skey):
         "（群里@成员名字点名发言）；右键会话名可以改名、置顶、导出聊天记录"
         "（md文件，存到软壳目录的exports文件夹）、删除；标题栏🔍搜索本会话"
         "聊天记录（全文/图片与表情包/链接/文件路径四类）；运行中按Esc或■随时打断；"
-        "发图用📎按钮或Ctrl+V粘贴；底部状态栏可切换模型和effort（下一条消息生效），"
-        "左下角显示每轮token消耗；聊天记录自动留档在本地，重开窗口自动回放。\n"
+        "发图用📎按钮或Ctrl+V粘贴；状态栏右侧的模型/effort按钮可切换（下一条消息生效），"
+        "状态栏左侧显示的是每轮token消耗（只是数字，不可点）；"
+        "聊天记录自动留档在本地，重开窗口自动回放。\n"
         "【表情包】" + STICKER_DIR + " 文件夹里放着表情包，用到时再翻看即可。"
         "发送方式：写 [[表情:文件名]]（带不带后缀都认），单独占一行会显示成"
         "微信式的独立表情消息，夹在句中则嵌在文字里；只写你翻看后确认存在的文件名，"
@@ -920,6 +921,9 @@ class Handler(BaseHTTPRequestHandler):
                     if name:
                         e["name"] = name
                 elif self.path == "/session/pin":
+                    if "pin" not in p:
+                        self.send_error(400)   # 缺字段就报错，别把漏写当"取消置顶"
+                        return
                     e["pin"] = bool(p.get("pin"))
                 else:  # delete
                     d["list"] = [s for s in d["list"] if s["key"] != key]
@@ -999,6 +1003,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         rid = str(payload.get("rid", "")) or ("r%d" % int(time.time() * 1000))
         text = str(payload.get("text", "")).strip()
+        if not re.sub(r"[\u200b\u200c\u200d\u2060\ufeff\s]+", "", text):
+            text = ""   # 只剩零宽/空白字符＝空消息，别让隐形字符白烧一轮
         images = []
         for p in (payload.get("images") or []):
             # 只认 uploads 里桥接自己存的文件；外部塞进来的任意路径不理，
@@ -1147,6 +1153,7 @@ class Handler(BaseHTTPRequestHandler):
             last_text = ""
             err_ev = None
             round_texts = []
+            round_thinks = []
             try:
                 for line in proc.stdout:
                     line = line.strip()
@@ -1159,6 +1166,8 @@ class Handler(BaseHTTPRequestHandler):
                     for ev in translate(obj):
                         if ev.get("kind") == "session" and ev.get("id"):
                             new_sid = ev["id"]
+                        elif ev.get("kind") == "thinking":
+                            round_thinks.append(ev.get("text") or "")
                         elif ev.get("kind") == "text":
                             last_text = ev["text"]
                             round_texts.append(ev["text"])
@@ -1197,6 +1206,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._emit({"kind": "stats", "tin": 0, "tout": 0, "cr": 0, "cc": 0,
                             "ms": int((time.time() - t_round) * 1000), "cut": True})
                 self._finish_session(skey, new_sid, raw_text, last_text)
+                if not round_texts and round_thinks:
+                    # 抢救半成品：正文没来得及出，至少把最后的思考片段留档
+                    append_jsonl(history_path(skey),
+                                 {"who": "claude", "name": "Claude", "think": True,
+                                  "text": "（中断前的思考片段）" + round_thinks[-1][-800:],
+                                  "ts": int(time.time())})
                 # 打断时机决定这条消息有没有进模型记忆——两种结果要说清楚
                 stop_note = ("已停止（这条消息已进入会话记忆，下轮它可能还记得）"
                              if (emitted or new_sid) else
@@ -1347,16 +1362,19 @@ class Handler(BaseHTTPRequestHandler):
         all_names = [m["name"] for m in members]
         append_group_msg(gkey, "user", "用户", text, imgs=up_names, stk=stk_rels)
         # @路由：长名字先匹配防前缀重叠；按@出现的位置排队——@谁在前谁先说
-        hits = []
         tmp = text.replace("＠", "@")   # 中文输入法的全角＠一视同仁
-        for m in sorted(members, key=lambda x: -len(x["name"])):
-            # @前面若是邮箱式字符（test@阿甲.com）就不算点名
-            pat = re.compile(r"(?<![A-Za-z0-9._%+-])@" + re.escape(m["name"]))
-            mt = pat.search(tmp)
-            if mt:
-                hits.append((mt.start(), m))
-                tmp = pat.sub(lambda mo: "\x00" * len(mo.group(0)), tmp)
-        targets = [m for _, m in sorted(hits, key=lambda x: x[0])]
+        if re.search(r"(?<![A-Za-z0-9._%+-])@(所有人|全体成员|全员)", tmp):
+            targets = list(members)   # 微信肌肉记忆：@所有人＝全员按入群顺序依次发言
+        else:
+            hits = []
+            for m in sorted(members, key=lambda x: -len(x["name"])):
+                # @前面若是邮箱式字符（test@阿甲.com）就不算点名
+                pat = re.compile(r"(?<![A-Za-z0-9._%+-])@" + re.escape(m["name"]))
+                mt = pat.search(tmp)
+                if mt:
+                    hits.append((mt.start(), m))
+                    tmp = pat.sub(lambda mo: "\x00" * len(mo.group(0)), tmp)
+            targets = [m for _, m in sorted(hits, key=lambda x: x[0])]
         if not targets:
             if "@" in text.replace("＠", "@"):
                 self._emit({"kind": "note",
