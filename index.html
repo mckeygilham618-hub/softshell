@@ -202,6 +202,9 @@
     white-space: nowrap; text-overflow: ellipsis;
   }
   #laststats { float: left; margin-right: 12px; color: #b0b0b0; }
+  #thinkstate, #wordcount { float: left; margin-right: 10px; color: #b0b0b0; }
+  #thinkstate { cursor: pointer; }
+  #thinkstate:hover { color: #555; }
 
   /* ── 查找 / 置顶 / 回放 ── */
   #searchbtn {
@@ -353,7 +356,7 @@
   <button id="send">发送</button>
 </footer>
 <div id="statusbar">
-  <span id="voicestate"></span><span id="laststats"></span><span id="grouphint" style="display:none"></span><span class="sbtn" id="voicebtn">嗓音</span><span class="sbtn" id="modelbtn">默认模型</span><span class="sbtn" id="effortbtn">默认</span>
+  <span id="voicestate"></span><span id="laststats"></span><span id="thinkstate" title="点击展开/折叠全部思考"></span><span id="wordcount" title="双方在本会话聊的总字数"></span><span id="grouphint" style="display:none"></span><span class="sbtn" id="voicebtn">嗓音</span><span class="sbtn" id="modelbtn">默认模型</span><span class="sbtn" id="effortbtn">默认</span>
 </div>
 <div class="popmenu" id="modelmenu">
   <div class="mtitle">模型</div>
@@ -373,22 +376,15 @@
 </div>
 <div class="popmenu" id="voicemenu">
   <div class="mtitle">朗读嗓音 · 绑定当前会话（点击即试听）</div>
-  <div class="mtitle">在线神经嗓音（更好听，需联网）</div>
-  <div class="mi" data-voice="zh-CN-XiaoxiaoNeural"><span>晓晓 · 温暖女声</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="zh-CN-XiaoyiNeural"><span>晓伊 · 俏皮女声</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="zh-CN-liaoning-XiaobeiNeural"><span>小北 · 东北妹子</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="zh-CN-shaanxi-XiaoniNeural"><span>小妮 · 陕西妹子</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="zh-CN-YunxiNeural"><span>云希 · 阳光青年</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="zh-CN-YunjianNeural"><span>云健 · 成熟磁性</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="zh-CN-YunxiaNeural"><span>云夏 · 少年音</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="zh-CN-YunyangNeural"><span>云扬 · 播音男声</span><span class="chk">✓</span></div>
-  <div class="mtitle">粤语嗓音（香港）</div>
-  <div class="mi" data-voice="zh-HK-HiuGaaiNeural"><span>曉佳 · 粤语女声</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="zh-HK-HiuMaanNeural"><span>曉曼 · 粤语女声</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="zh-HK-WanLungNeural"><span>雲龍 · 粤语男声</span><span class="chk">✓</span></div>
-  <div class="mtitle">本地嗓音（离线可用）</div>
   <div class="mi" data-voice="local-female"><span>本地女声</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="zh-HK-HiuMaanNeural"><span>曉曼 · 粤语女声</span><span class="chk">✓</span></div>
   <div class="mi" data-voice="local-male"><span>本地男声</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="zh-HK-WanLungNeural"><span>雲龍 · 粤语男声</span><span class="chk">✓</span></div>
+  <div class="mtitle">多语种（联网）</div>
+  <div class="mi" data-voice="en-US-AriaNeural"><span>Aria · 英语美音</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="en-GB-SoniaNeural"><span>Sonia · 英语英音</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="ja-JP-NanamiNeural"><span>七海 · 日语</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="ko-KR-SunHiNeural"><span>善熙 · 韩语</span><span class="chk">✓</span></div>
 </div>
 <div class="popmenu" id="effortmenu">
   <div class="mtitle">Effort</div>
@@ -648,6 +644,7 @@
     }
     else if (ev.kind === 'thinking') {
       bubble('thought', (m ? esc(m.name) + '：' : '') + md(ev.text));
+      updateThinkState();
       setStatus(who + '思考中');
     }
     else if (ev.kind === 'tool') {
@@ -829,6 +826,8 @@
     chat.innerHTML = chatCache[key] || '';
     chat.scrollTop = chat.scrollHeight;
     if (!chatCache[key]) renderHistory(key);   // 本窗口没看过：从档案回放
+    updateThinkState();
+    updateWordCount();
     renderConvs();
     loadLook();
     ta.focus();
@@ -1039,6 +1038,7 @@
         if (start > 0) chip('（更早的 ' + start + ' 条没展开，点🔍能搜到）');
         for (var i = start; i < list.length; i++) renderRec(list[i], i);
         chat.scrollTop = chat.scrollHeight;
+        updateThinkState();
       }).catch(function () {});
   }
 
@@ -1138,17 +1138,45 @@
     else if (!busy) renderHistory(SKEY, true).then(flash);   // 不在视图里：全量重放再跳
   });
 
-  /* thinking 折叠：点标题单个开合；右键菜单一键全开/全合 */
-  chat.addEventListener('click', function (e) {
-    var t = e.target.closest('.thought');
-    if (t && e.target.closest('.thead')) t.classList.toggle('open');
-  });
-  document.getElementById('ctxthink').addEventListener('click', function () {
+  /* thinking 折叠：点标题单个开合；状态栏💭和右键菜单都能一键全开/全合 */
+  function updateThinkState() {
+    var el = document.getElementById('thinkstate');
+    var rows = chat.querySelectorAll('.thought');
+    if (!rows.length) { el.textContent = ''; return; }
+    var open = 0;
+    rows.forEach(function (r) { if (r.classList.contains('open')) open++; });
+    el.textContent = '💭' + rows.length +
+      (open === 0 ? '·折叠中' : open === rows.length ? '·展开中' : '·开' + open);
+  }
+  function toggleAllThinks() {
     var rows = chat.querySelectorAll('.thought');
     var anyClosed = false;
     rows.forEach(function (r) { if (!r.classList.contains('open')) anyClosed = true; });
     rows.forEach(function (r) { r.classList.toggle('open', anyClosed); });
+    updateThinkState();
+  }
+  chat.addEventListener('click', function (e) {
+    var t = e.target.closest('.thought');
+    if (t && e.target.closest('.thead')) { t.classList.toggle('open'); updateThinkState(); }
   });
+  document.getElementById('thinkstate').addEventListener('click', toggleAllThinks);
+  document.getElementById('ctxthink').addEventListener('click', toggleAllThinks);
+
+  /* 双方字数统计：服务端算好只回数字 */
+  function fmtWan(n) {
+    n = n || 0;
+    return n >= 10000 ? (n / 10000).toFixed(1) + '万'
+         : n >= 1000 ? (n / 1000).toFixed(1) + '千' : String(n);
+  }
+  async function updateWordCount() {
+    try {
+      var j = await (await fetch('/history?key=' + encodeURIComponent(SKEY) + '&stat=1')).json();
+      var tot = (j.chars_user || 0) + (j.chars_bot || 0);
+      document.getElementById('wordcount').textContent = tot
+        ? '共' + fmtWan(tot) + '字（你' + fmtWan(j.chars_user) + '·它' + fmtWan(j.chars_bot) + '）'
+        : '';
+    } catch (e) {}
+  }
 
   /* 置顶 / 导出 */
   document.getElementById('ctxpin').addEventListener('click', function () {
@@ -1455,7 +1483,10 @@
     }).catch(function () {});
     paintVoiceMenu();
     stopSpeak();
-    speak('你好，我是软壳，以后我在这个会话里就用这个声音陪你说话。');
+    speak(vid.indexOf('en-') === 0 ? 'Hi there, I will be the voice of this chat.'
+        : vid.indexOf('ja-') === 0 ? 'こんにちは、これからこの声でお話ししますね。'
+        : vid.indexOf('ko-') === 0 ? '안녕하세요, 앞으로 이 목소리로 말할게요.'
+        : '你好，我是软壳，以后我在这个会话里就用这个声音陪你说话。');
   });
 
   /* ── 模型 / effort 切换 ── */
@@ -1743,6 +1774,7 @@
     setBusy(false);
     loadLook();       // Claude 这轮要是换了头像/背景，回复一结束就生效
     loadSessions();   // 会话名/摘要/时间也可能变了
+    updateWordCount();
     ta.focus();
   }
 
@@ -1769,6 +1801,7 @@
   loadStickers();   // 先把表情包名字表拉下来，Claude 一上来就发表情也认得出
   loadSessions().then(loadLook).then(function () {
     if (SKEY) renderHistory(SKEY);   // 重开窗口不丢：从档案回放
+    updateWordCount();
   });
   ta.focus();
 </script>

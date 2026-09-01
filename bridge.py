@@ -869,6 +869,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error(404)
                 return
             msgs = read_jsonl(archive_of(e))
+            if (q.get("stat") or [""])[0]:
+                # 只要统计不要全文：字数计数在服务端算，档案再大前端也不用拉
+                cu = sum(len(m.get("text") or "") for m in msgs if m.get("who") == "user")
+                cb = sum(len(m.get("text") or "") for m in msgs if m.get("who") != "user")
+                self._send_bytes(json.dumps(
+                    {"total": len(msgs), "chars_user": cu, "chars_bot": cb},
+                    ensure_ascii=False).encode("utf-8"),
+                    "application/json; charset=utf-8", {"Cache-Control": "no-store"})
+                return
             for i, m in enumerate(msgs):
                 m["idx"] = i          # 稳定锚点：档案里的行号（追加式文件，行号不漂）
             kw = (q.get("q") or [""])[0]
