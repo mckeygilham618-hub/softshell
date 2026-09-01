@@ -1216,6 +1216,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             text = str(p.get("text") or "").strip()[:600]
             voice = str(p.get("voice") or "")
+            rate = str(p.get("rate") or "+30%")   # 默认+30%：正常聊天的爽快语速
+            if not re.match(r"^[+-]\d{1,3}%$", rate):
+                rate = "+30%"
             if not text or not re.match(
                     r"^[a-z]{2,3}-[A-Z]{2}(-[a-z]+)?-[A-Za-z]{2,40}Neural$", voice):
                 self.send_error(400)
@@ -1229,7 +1232,7 @@ class Handler(BaseHTTPRequestHandler):
 
             async def _gen():
                 buf = bytearray()
-                async for ch in edge_tts.Communicate(text, voice).stream():
+                async for ch in edge_tts.Communicate(text, voice, rate=rate).stream():
                     if ch["type"] == "audio":
                         buf.extend(ch["data"])
                 return bytes(buf)
