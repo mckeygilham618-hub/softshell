@@ -518,7 +518,9 @@ def load_hotwords():
                 if not bad or not good:
                     continue
                 if re.fullmatch(r"[A-Za-z' ]+", bad):
-                    rules.append((re.compile(r"(?i)\b" + re.escape(bad) + r"\b"), good))
+                    # \b在中文旁失灵（CJK也算词字符），只用英文字母做边界
+                    rules.append((re.compile(
+                        r"(?i)(?<![A-Za-z])" + re.escape(bad) + r"(?![A-Za-z])"), good))
                 else:
                     rules.append((re.compile(re.escape(bad)), good))
         except OSError:
