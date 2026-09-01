@@ -991,6 +991,58 @@ class Handler(BaseHTTPRequestHandler):
                 json.dumps({"path": out}, ensure_ascii=False).encode("utf-8"),
                 "application/json; charset=utf-8")
             return
+        if self.path == "/export_html":
+            n = int(self.headers.get("Content-Length", 0))
+            if n <= 0 or n > 100 * 1024 * 1024:
+                self.send_error(400)
+                return
+            try:
+                p = json.loads(self.rfile.read(n).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                self.send_error(400)
+                return
+            with SESS_LOCK:
+                d = load_sessions()
+                e = get_session(d, str(p.get("key", "")))
+            if not e:
+                self.send_error(404)
+                return
+            html = str(p.get("html") or "")
+            if not html:
+                self.send_error(400)
+                return
+            name = re.sub(r'[\\/:*?"<>|]', "_", e.get("name") or "会话").strip() or "会话"
+            base = "%s-%s" % (name, time.strftime("%Y%m%d-%H%M%S"))
+            try:
+                os.makedirs(EXPORT_DIR, exist_ok=True)
+                hp = os.path.join(EXPORT_DIR, base + ".html")
+                with open(hp, "w", encoding="utf-8") as f:
+                    f.write(html)
+            except OSError:
+                self.send_error(500)
+                return
+            pdf = ""
+            if BROWSER:
+                # 无头打印成真文本PDF：文字可选中/可搜索/可编辑，不是截图。
+                # 单独的user-data-dir防止和正在开着的Edge窗口抢配置目录
+                pp = os.path.join(EXPORT_DIR, base + ".pdf")
+                prof = os.path.join(os.environ.get("TEMP", DIR), "softshell-pdf-profile")
+                try:
+                    subprocess.run(
+                        [BROWSER, "--headless", "--disable-gpu",
+                         "--user-data-dir=" + prof,
+                         "--no-pdf-header-footer",
+                         "--print-to-pdf=" + pp,
+                         "file:///" + hp.replace("\\", "/")],
+                        creationflags=NO_WINDOW, capture_output=True, timeout=90)
+                    if os.path.isfile(pp) and os.path.getsize(pp) > 0:
+                        pdf = pp
+                except (OSError, subprocess.SubprocessError):
+                    pass
+            self._send_bytes(
+                json.dumps({"html": hp, "pdf": pdf}, ensure_ascii=False).encode("utf-8"),
+                "application/json; charset=utf-8")
+            return
         if self.path == "/prefs":
             n = int(self.headers.get("Content-Length", 0))
             try:

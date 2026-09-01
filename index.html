@@ -96,6 +96,13 @@
     background: transparent; box-shadow: none; color: #9a9a9a;
     font-size: 13px; padding: 2px 12px; margin-left: 46px;
   }
+  /* thinking 默认折叠，点标题展开 */
+  .thought .thead { cursor: pointer; user-select: none; }
+  .thought .thead:hover { color: #666; }
+  .thought .thead::after { content: '（点开）'; font-size: 12px; color: #c5c5c5; }
+  .thought.open .thead::after { content: '（收起）'; }
+  .thought .tbody { display: none; }
+  .thought.open .tbody { display: block; }
   .bubble img { max-width: 220px; border-radius: 6px; display: block; margin: 4px 0; }
   /* 表情包气泡：不切图，整张缩进去 */
   .bubble img.sticker { max-width: 140px; max-height: 140px; object-fit: contain; }
@@ -304,6 +311,7 @@
 </div>
 <div id="ctxmenu">
   <div id="ctxpin">置顶</div>
+  <div id="ctxthink">展开/折叠全部 thinking</div>
   <div id="ctxrename">改名</div>
   <div id="ctxexport">导出聊天记录</div>
   <div id="ctxdelete" class="danger">删除会话</div>
@@ -543,6 +551,10 @@
     }
     else if (cls === 'bot') d.innerHTML = avatarHtml('claude') + inner;
     else if (cls === 'user') d.innerHTML = inner + avatarHtml('user');
+    else if (cls === 'thought') {
+      d.innerHTML = '<div class="bubble"><span class="thead">💭 思考过程</span>' +
+                    '<div class="tbody">' + html + '</div></div>';
+    }
     else d.innerHTML = inner;
     chat.appendChild(d);
     chat.scrollTop = chat.scrollHeight;
@@ -1098,6 +1110,18 @@
     else if (!busy) renderHistory(SKEY, true).then(flash);   // 不在视图里：全量重放再跳
   });
 
+  /* thinking 折叠：点标题单个开合；右键菜单一键全开/全合 */
+  chat.addEventListener('click', function (e) {
+    var t = e.target.closest('.thought');
+    if (t && e.target.closest('.thead')) t.classList.toggle('open');
+  });
+  document.getElementById('ctxthink').addEventListener('click', function () {
+    var rows = chat.querySelectorAll('.thought');
+    var anyClosed = false;
+    rows.forEach(function (r) { if (!r.classList.contains('open')) anyClosed = true; });
+    rows.forEach(function (r) { r.classList.toggle('open', anyClosed); });
+  });
+
   /* 置顶 / 导出 */
   document.getElementById('ctxpin').addEventListener('click', function () {
     var s = SESSIONS.filter(function (x) { return x.key === ctxKey; })[0];
@@ -1108,15 +1132,136 @@
     }).then(loadSessions).catch(function () {});
   });
   document.getElementById('ctxexport').addEventListener('click', function () {
-    fetch('/export', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key: ctxKey })
-    }).then(function (r) {
-      if (!r.ok) { chip('导出失败：桥接返回 ' + r.status); return null; }
-      return r.json();
-    }).then(function (j) { if (j) chip('聊天记录已导出：' + j.path); })
-      .catch(function () { chip('导出失败：桥接没响应'); });
+    exportAll(ctxKey);
   });
+
+  /* 三件套导出：md（引用复制）+ 网页（眼睛舒服、资产内嵌可传世）+ 真文本PDF（可选中可搜索） */
+  function fetchDataURL(url) {
+    return fetch(url).then(function (r) {
+      if (!r.ok) throw new Error(url);
+      return r.blob();
+    }).then(function (b) {
+      return new Promise(function (res, rej) {
+        var fr = new FileReader();
+        fr.onload = function () { res(fr.result); };
+        fr.onerror = rej;
+        fr.readAsDataURL(b);
+      });
+    });
+  }
+  function shrunkDataURL(url, maxSide) {
+    // 缩到显示所需尺寸再转base64：头像只显示38px，嵌原图纯属浪费
+    return new Promise(function (res, rej) {
+      var im = new Image();
+      im.onload = function () {
+        var sc = Math.min(1, maxSide / Math.max(im.width, im.height));
+        var c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(im.width * sc));
+        c.height = Math.max(1, Math.round(im.height * sc));
+        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+        var isPhoto = /\.(jpe?g)/i.test(decodeURIComponent(url));
+        res(isPhoto ? c.toDataURL('image/jpeg', 0.85) : c.toDataURL('image/png'));
+      };
+      im.onerror = rej;
+      im.src = url;
+    });
+  }
+  var EXPORT_CSS =
+    'body{margin:0;background:#ededed;font:15px/1.65 -apple-system,"Segoe UI","Microsoft YaHei","Segoe UI Emoji","Apple Color Emoji",sans-serif;color:#1a1a1a;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
+    '#chat{max-width:860px;margin:0 auto;padding:16px 14px;min-height:100vh;background-size:cover;background-position:center}' +
+    '.row{display:flex;margin:9px 0;gap:8px}.row.user{justify-content:flex-end}' +
+    '.avatar{width:38px;height:38px;border-radius:4px;flex:none;overflow:hidden;margin-top:1px}' +
+    '.avatar.claude{background:#fff;box-shadow:0 1px 1px rgba(0,0,0,.06)}.avatar.user{background:#07c160}' +
+    '.avatar img{width:100%;height:100%;object-fit:cover}' +
+    '.bubble{max-width:80%;padding:9px 12px;border-radius:8px;background:#fff;box-shadow:0 1px 1px rgba(0,0,0,.06);word-break:break-word}' +
+    '.user .bubble{background:#95ec69}.bubble.naked{background:transparent;box-shadow:none;padding:0}' +
+    '.bcol{max-width:80%;min-width:0}.bcol .bubble{max-width:100%}' +
+    '.mname{font-size:11px;color:#9a9a9a;margin:0 0 2px 2px}' +
+    '.thought .bubble{background:transparent;box-shadow:none;color:#9a9a9a;font-size:13px;padding:2px 12px;margin-left:46px}' +
+    '.thought .thead{cursor:pointer}.thought .tbody{display:none}.thought.open .tbody{display:block}' +
+    '.chip{text-align:center;color:#b0b0b0;font-size:12px;margin:5px 0}' +
+    '.bubble img{max-width:220px;border-radius:6px;display:block;margin:4px 0}' +
+    '.bubble img.sticker{max-width:140px;max-height:140px;object-fit:contain}' +
+    'pre{background:#f6f6f6;border:1px solid #e8e8e8;border-radius:6px;padding:8px 10px;overflow-x:auto;font-size:13px;line-height:1.5}' +
+    'code{background:#f0f0f0;border-radius:3px;padding:1px 4px;font-size:13px}pre code{background:none;padding:0}' +
+    '.tblwrap{overflow-x:auto;max-width:100%}table{border-collapse:collapse;font-size:13px;margin:6px 0}' +
+    'th,td{border:1px solid #e2e2e2;padding:4px 9px;text-align:left;white-space:nowrap}th{background:#f6f6f6;font-weight:600}' +
+    '.mdh{font-weight:700;margin:8px 0 3px}ul,ol{margin:4px 0 4px 18px;padding:0}li{margin:2px 0}' +
+    '.bq{border-left:3px solid #d5d5d5;padding:1px 0 1px 9px;color:#777;margin:3px 0}' +
+    'a{color:#576b95;text-decoration:none}@media print{.thought .tbody{display:block}}';
+
+  async function exportAll(key) {
+    chip('导出中…');
+    var mdOk = false;
+    try {
+      var r0 = await fetch('/export', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: key })
+      });
+      mdOk = r0.ok;
+    } catch (e) {}
+    try {
+      var h = await (await fetch('/history?key=' + encodeURIComponent(key))).json();
+      var lk = await (await fetch('/look?key=' + encodeURIComponent(key))).json();
+      // 离屏渲染：临时接管全局，走同一份渲染器，网页版与聊天窗像素级同源
+      var realChat = chat, realLook = LOOK, realAv = HIST_AVATARS;
+      chat = document.createElement('div');
+      LOOK = lk || {};
+      HIST_AVATARS = h.avatars || {};
+      var rowsHtml = '';
+      try {
+        (h.list || []).forEach(function (m, i) { renderRec(m, i); });
+        rowsHtml = chat.innerHTML;
+      } catch (e) {}
+      chat = realChat; LOOK = realLook; HIST_AVATARS = realAv;
+      if (!rowsHtml) { chip('导出网页版失败：渲染出错'); return; }
+      rowsHtml = rowsHtml.replace(/class="row thought"/g, 'class="row thought open"');
+      // 资产冻结：每张图只嵌一次（CSS类引用去重），并缩到显示尺寸再嵌，
+      // 不然每条气泡重复内嵌原图，文件轻松爆到几十MB
+      var seen = {};
+      (rowsHtml.match(/src="\/(?:sticker|uploadfile)\?f=[^"]+"/g) || [])
+        .forEach(function (s) { seen[s.slice(5, -1)] = 1; });
+      var cssExtra = '', ai = 0;
+      for (var u in seen) {
+        try {
+          var isGif = /\.gif/i.test(decodeURIComponent(u));
+          var durl = isGif ? await fetchDataURL(u)      // gif保原件，动画不丢
+                           : await shrunkDataURL(u, 320);
+          var cls = 'ax' + (ai++);
+          cssExtra += 'img.' + cls + '{content:url("' + durl + '")}';
+          rowsHtml = rowsHtml
+            .split('class="sticker" src="' + u + '"').join('class="sticker ' + cls + '"')
+            .split('src="' + u + '"').join('class="' + cls + '"');
+        } catch (e) { /* 图丢了就留原链接，文字不受影响 */ }
+      }
+      var bgCss = '';
+      if (lk && lk.background) {
+        try {
+          bgCss = 'background-image:url(' +
+                  await shrunkDataURL('/sticker?f=' + encodeURIComponent(lk.background), 1400) + ')';
+        } catch (e) {}
+      }
+      var cur = SESSIONS.filter(function (s) { return s.key === key; })[0];
+      var title = (cur && cur.name) || '聊天记录';
+      var doc = '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(title) +
+        ' · Softshell</title><style>' + EXPORT_CSS + cssExtra + '</style></head><body>' +
+        '<div id="chat" style="' + bgCss + '">' + rowsHtml + '</div>' +
+        '<scr' + 'ipt>document.addEventListener("click",function(e){' +
+        'var t=e.target.closest(".thought");' +
+        'if(t&&e.target.closest(".thead"))t.classList.toggle("open")})</scr' + 'ipt>' +
+        '</body></html>';
+      var r1 = await fetch('/export_html', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: key, html: doc })
+      });
+      if (!r1.ok) { chip('网页版导出失败：桥接返回 ' + r1.status); return; }
+      var j = await r1.json();
+      chip('已导出' + (mdOk ? ' md✓' : '') + ' 网页✓' +
+           (j.pdf ? ' PDF✓' : '（PDF未生成：需要Edge/Chrome）') + '：' + j.html);
+    } catch (e) {
+      chip('导出失败：' + esc(String(e)));
+    }
+  }
 
   /* ── 模型 / effort 切换 ── */
   var modelbtn = document.getElementById('modelbtn');
