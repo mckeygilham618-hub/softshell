@@ -84,6 +84,15 @@ IMG_TYPES = {
 STATE_FILE = os.path.join(DIR, "state.json")
 LOOK_KEYS = ("avatar_claude", "avatar_user", "background")
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
+# 型号 → 界面显示名（与 index.html 的 MODEL_NAMES 同一份内容；建群时成员初始昵称用它）
+MODEL_LABELS = {
+    "fable": "Fable 5.1", "opus": "Opus 5", "sonnet": "Sonnet 5", "haiku": "Haiku 4.5",
+    "claude-fable-5": "Fable 5", "claude-opus-4-8": "Opus 4.8",
+    "claude-opus-4-7": "Opus 4.7", "claude-opus-4-6": "Opus 4.6",
+    "claude-sonnet-4-6": "Sonnet 4.6", "opusplan": "OpusPlan",
+}
+# 群里不许当昵称的词：@路由的保留字、系统条署名
+RESERVED_NAMES = ("用户", "所有人", "全体成员", "全员", "系统")
 
 
 def valid_model(s):
@@ -127,7 +136,7 @@ def intro_text(skey):
         "(这是「Softshell 软壳」聊天窗口，你的输出按聊天软件方式显示：支持粗体、"
         "代码块、表格和列表，但更适合短句分段的聊天式表达。\n"
         "【界面功能】用户问起时你要答得上来：左侧栏可开多个会话、可拉群聊"
-        "（群里@成员名字点名发言）；右键会话名可以改名、置顶、导出聊天记录"
+        "（选型号和数量建群，群里@成员名字点名发言）；右键会话名可以改名、置顶、导出聊天记录"
         "（md文件，存到软壳目录的exports文件夹）、删除；标题栏🔍搜索本会话"
         "聊天记录（全文/图片与表情包/链接/文件路径四类）；运行中按Esc或■随时打断；"
         "发图用📎按钮或Ctrl+V粘贴；状态栏右侧的模型/effort按钮可切换（下一条消息生效），"
@@ -350,13 +359,18 @@ def export_md(sess):
     name = re.sub(r'[\\/:*?"<>|]', "_", sess.get("name") or "会话").strip() or "会话"
     lines = ["# %s —— Softshell 聊天记录" % (sess.get("name") or "会话"), ""]
     if sess.get("type") == "group":
-        lines.append("群成员：用户、" +
+        lines.append("群成员：" + group_user_name(sess) + "、" +
                      "、".join(m["name"] for m in sess.get("members", [])))
+        lines.append("群主：" + group_owner_name(sess))
+        if (sess.get("notice") or "").strip():
+            lines.append("群公告：" + sess["notice"].strip())
         lines.append("")
     lines.append("导出时间：" + time.strftime("%Y-%m-%d %H:%M"))
     lines += ["", "---", ""]
     if not msgs:
         lines += ["（这个会话还没有留档的消息。留档从档案功能上线那天开始。）", ""]
+    # 改过昵称的成员：正文按 mid 映射成现名，和表头、网页回放一致；没 mid 的老记录照旧
+    cur_names = {mm.get("mid"): mm["name"] for mm in sess.get("members", []) if mm.get("mid")}
     for m in msgs:
         if m.get("think"):
             continue   # md导出保持纯对话；思考在网页版/PDF里可见
@@ -364,7 +378,13 @@ def export_md(sess):
             lines += ["（系统：%s）" % m.get("text", ""), "", "---", ""]
             continue
         ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(m["ts"])) if m.get("ts") else ""
-        lines.append("**%s**（%s）：" % (m.get("name", "?"), ts))
+        nm = m.get("name", "?")
+        if sess.get("type") == "group":
+            if m.get("who") == "user":
+                nm = group_user_name(sess)
+            elif m.get("mid") in cur_names:
+                nm = cur_names[m["mid"]]
+        lines.append("**%s**（%s）：" % (nm, ts))
         lines.append("")
         if m.get("text"):
             lines += [_export_safe(m["text"]), ""]
@@ -395,8 +415,13 @@ def group_log_path(key):
     return os.path.join(GROUPS_DIR, key + ".jsonl")
 
 
-def append_group_msg(key, who, name, text, imgs=None, stk=None, think=False):
+def append_group_msg(key, who, name, text, imgs=None, stk=None, think=False,
+                     mid=None, tell=False):
     rec = {"who": who, "name": name, "text": text, "ts": int(time.time())}
+    if mid:
+        rec["mid"] = mid       # 成员的稳定身份：改昵称后旧消息也能认出是谁
+    if tell:
+        rec["tell"] = True     # 系统条里成员也该知道的事（改名/换群主/改公告/改群名）
     if imgs:
         rec["imgs"] = imgs
     if stk:
@@ -428,8 +453,12 @@ def read_group_msgs(key, start):
 def transcript_text(msgs):
     out = []
     for m in msgs:
-        if m.get("who") == "system" or m.get("think"):
-            continue   # 系统灰条与思考只给人看，不进成员的耳朵
+        if m.get("think"):
+            continue   # 思考只给人看，不进成员的耳朵
+        if m.get("who") == "system":
+            if m.get("tell"):
+                out.append("（系统通知：%s）" % m.get("text", ""))
+            continue   # 其余系统灰条（中断/报错）只给人看
         line = "%s: %s" % (m.get("name", "?"), m.get("text", ""))
         if m.get("stk"):
             line += " [表情包:%s]" % ",".join(
@@ -440,18 +469,114 @@ def transcript_text(msgs):
     return "\n".join(out)
 
 
-def group_intro(member_name, all_names):
-    others = "、".join(n for n in all_names if n != member_name) or "（暂无）"
+def group_user_name(g):
+    """用户在这个群里的昵称（默认「用户」）。"""
+    return (g.get("user_name") or "用户").strip() or "用户"
+
+
+def group_owner_name(g):
+    """群主的名字：owner 是 "user" 或某成员的 mid；找不到就当用户是群主。"""
+    ow = g.get("owner") or "user"
+    if ow != "user":
+        for m in g.get("members", []):
+            if m.get("mid") == ow:
+                return m["name"]
+    return group_user_name(g)
+
+
+def member_label(m):
+    return MODEL_LABELS.get(m.get("model") or "", m.get("model") or "默认型号")
+
+
+def group_state_text(g):
+    """群的当前状态一段话：群名/群主/成员/公告。补课时用。"""
+    names = "、".join(m["name"] for m in g.get("members", [])) or "（暂无）"
+    notice = (g.get("notice") or "").strip() or "（暂无）"
+    return ("群名：「%s」；群主：%s；成员：%s（人类）、%s。\n【群公告】%s" % (
+        g.get("name") or "群聊", group_owner_name(g), group_user_name(g), names, notice))
+
+
+def check_nickname(g, name, self_mid=None):
+    """昵称合法性。self_mid 是改名者自己（"user" 或成员 mid），重名检查时跳过自己。
+    返回错误文案；合法返回空串。"""
+    name = (name or "").strip()
+    if not name:
+        return "昵称不能为空"
+    if len(name) > 20:
+        return "昵称不能超过20个字"
+    if "@" in name or "\n" in name or "[" in name or "]" in name:
+        return "昵称不能含 @、[ ]、换行"
+    if name == "用户" and self_mid == "user":
+        pass   # 用户改回默认名可以
+    elif name in RESERVED_NAMES:
+        return "「%s」是保留词，不能当昵称" % name
+    elif name.startswith(("所有人", "全体成员", "全员")):
+        return "昵称不能以「所有人/全员」开头，@点名会被当成全员发言"
+    if self_mid != "user" and name == group_user_name(g):
+        return "「%s」已被用户占用" % name
+    for m in g.get("members", []):
+        if (self_mid is None or m.get("mid") != self_mid) and m.get("name") == name:
+            return "「%s」已有人在用" % name
+    return ""
+
+
+# 成员回复里的群操作标签：[[改名:新昵称]]（谁都能改自己的）、[[公告:内容]]（只有群主生效）
+GTAG_RE = re.compile(r"^[ \t]*\[\[(改名|昵称|rename|公告|notice)[:：][ \t]*(.*?)[ \t]*\]\][ \t]*$")
+
+
+def extract_group_tags(text):
+    """摘出单独成行的群操作标签（代码围栏里的不算）。
+    返回 (去掉标签后的文本, 新昵称或None, 新公告或None)。"""
+    out, name, notice = [], None, None
+    fence = False
+    for ln in text.split("\n"):
+        if ln.strip().startswith("```"):
+            fence = not fence
+            out.append(ln)
+            continue
+        mt = None if fence else GTAG_RE.match(ln)
+        if not mt:
+            out.append(ln)
+            continue
+        kind, val = mt.group(1), mt.group(2).strip()
+        if kind in ("改名", "昵称", "rename"):
+            name = val
+        else:
+            notice = val
+    return "\n".join(out).strip(), name, notice
+
+
+def group_intro(g, member):
+    """新成员（或会话链重开的成员）的开场白：群名、群主、公告、成员、能力说明。"""
+    me = member["name"]
+    others = "、".join(m["name"] for m in g.get("members", [])
+                      if m.get("mid") != member.get("mid") and m["name"] != me) or "（暂无）"
+    uname = group_user_name(g)
+    is_owner = (g.get("owner") or "user") == member.get("mid")
+    notice = (g.get("notice") or "").strip() or "（暂无）"
     return (
-        "(这是「Softshell」群聊窗口。你是群成员「" + member_name + "」，"
-        "群里还有：用户（人类，群主）、" + others + "（其他Claude实例，和你一样各自独立）。\n"
-        "下面的群聊转录里，「用户」是人类的发言，其他名字是别的成员。"
-        "请以「" + member_name + "」的身份直接发言，不要在开头带自己的名字，"
+        "(这是「Softshell」群聊窗口，本群群名：「" + (g.get("name") or "群聊") + "」。"
+        "你是群成员「" + me + "」（型号 " + member_label(member) + "），"
+        "群里还有：" + uname + "（人类）、" + others + "（其他Claude实例，和你一样各自独立，"
+        "同型号的成员也互不相通）。群主：" + group_owner_name(g) + "。\n"
+        "【群公告】" + notice + "\n"
+        "下面的群聊转录里，「" + uname + "」是人类的发言，其他名字是别的成员；"
+        "「系统通知」是群里的变动（改名、换群主、改公告、改群名）。"
+        "请以「" + me + "」的身份直接发言，不要在开头带自己的名字，"
         "你说的话会转达给群里所有人。支持粗体、代码块、表格，但更适合聊天式短句。\n"
+        "【改昵称】你可以改自己在本群的昵称：回复里单独一行写 [[改名:新昵称]]"
+        "（20字以内，不能和别人重名），改完全群会收到通知，之后@新昵称才叫得到你。"
+        "用户给你设定身份、角色时，可以顺手把昵称改成合身份的名字。\n"
+        "【群公告】只有群主能改。" + (
+            "你是群主，可以在回复里单独一行写 [[公告:内容]] 更新公告（整条公告写在这一行里）。" if is_owner
+            else "你不是群主，写 [[公告:…]] 不会生效。") + "\n"
+        "【界面】标题栏右上角的⋯菜单里有：查找聊天记录、群公告、群成员名单"
+        "（用户可在里面改成员昵称、指定群主）、用户改自己的群昵称；"
+        "状态栏的 effort 按钮对本群所有成员统一生效。\n"
         + STICKER_DIR + " 里有表情包，需要时可写 [[表情:文件名]] 发送"
         "（单独占一行，会显示成独立的一条表情消息；只写翻看后确认存在的文件名，"
         "猜错会穿帮成文字），直接打emoji也行。"
-        "群成员的头像在建群时定格，群里不换装。)"
+        "群成员的头像固定，群里不换装。)"
     )
 
 
@@ -705,6 +830,64 @@ def migrate_member_avatars():
                     changed = True
         if changed:
             save_sessions(d)
+
+
+def migrate_group_fields():
+    """老群补齐新字段：成员 mid、群主、公告、用户昵称。老群照常能用。"""
+    with SESS_LOCK:
+        d = load_sessions()
+        changed = False
+        for s in d["list"]:
+            if s.get("type") != "group":
+                continue
+            for i, mm in enumerate(s.get("members", [])):
+                if not mm.get("mid"):
+                    mm["mid"] = "m%s%02d" % (s["key"][1:], i)
+                    changed = True
+            for k, v in (("owner", "user"), ("notice", ""), ("user_name", "用户")):
+                if k not in s:
+                    s[k] = v
+                    changed = True
+            backfill_log_mids(s)
+        if changed:
+            save_sessions(d)
+
+
+def backfill_log_mids(g):
+    """老群日志里的成员记录没有 mid：按当时的名字对上现在的成员补上，
+    改过昵称后旧消息才能跟着显示新名。幂等，没得补就不动文件。"""
+    p = group_log_path(g["key"])
+    if not p or not os.path.exists(p):
+        return
+    by_name = {m["name"]: m["mid"] for m in g.get("members", []) if m.get("mid")}
+    try:
+        with open(p, encoding="utf-8") as f:
+            lines = f.read().split("\n")
+    except OSError:
+        return
+    out, changed = [], False
+    for ln in lines:
+        if ln.strip():
+            try:
+                rec = json.loads(ln)
+            except ValueError:
+                out.append(ln)
+                continue
+            if (rec.get("who") == "member" and not rec.get("mid")
+                    and rec.get("name") in by_name):
+                rec["mid"] = by_name[rec["name"]]
+                ln = json.dumps(rec, ensure_ascii=False)
+                changed = True
+        out.append(ln)
+    if not changed:
+        return
+    tmp = p + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write("\n".join(out))
+        os.replace(tmp, p)
+    except OSError:
+        pass
 
 
 def ensure_sticker_dir():
@@ -1072,11 +1255,16 @@ class Handler(BaseHTTPRequestHandler):
             out = {"list": msgs, "total": total,
                    "type": e.get("type", "chat")}
             if e.get("type") == "group":
-                av = {}
+                av, mems = {}, {}
                 for m in e.get("members", []):
                     rel = m.get("avatar") or ""
-                    av[m["name"]] = rel if sticker_path(rel) else ""
+                    rel = rel if sticker_path(rel) else ""
+                    av[m["name"]] = rel
+                    if m.get("mid"):
+                        mems[m["mid"]] = {"name": m["name"], "avatar": rel}
                 out["avatars"] = av
+                out["members"] = mems   # 按 mid 映射：改过昵称的成员，旧消息也显示新名字
+                out["user_name"] = group_user_name(e)
             self._send_bytes(
                 json.dumps(out, ensure_ascii=False).encode("utf-8"),
                 "application/json; charset=utf-8",
@@ -1306,40 +1494,115 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error(400)
                 return
             gname = str(p.get("name", "")).strip()[:50] or "群聊"
-            srckeys = [str(k) for k in (p.get("srckeys") or [])]
+            # 直接按型号拉人：[{model, count}]。不依赖私聊会话，成员各自是全新的会话链
+            members, taken = [], set()
+            for sp in (p.get("members") or []):
+                if not isinstance(sp, dict):
+                    continue
+                model = str(sp.get("model") or "")
+                try:
+                    cnt = int(sp.get("count") or 0)
+                except (TypeError, ValueError):
+                    cnt = 0
+                if not valid_model(model) or cnt <= 0:
+                    continue
+                cnt = min(cnt, 9)
+                label = MODEL_LABELS.get(model, model)
+                for i in range(cnt):
+                    # 同型号拉多个：Fable 5.1-1、Fable 5.1-2；只拉一个不带编号
+                    base = label if cnt == 1 else "%s-%d" % (label, i + 1)
+                    nm, k = base, 2
+                    while nm in taken:
+                        nm = "%s-%d" % (base, k)
+                        k += 1
+                    taken.add(nm)
+                    members.append({
+                        "mid": "m%d%02d" % (int(time.time() * 1000), len(members)),
+                        "name": nm, "model": model, "effort": "", "sid": "",
+                        "read": 0, "avatar": "",
+                    })
+            if len(members) < 2:
+                self.send_error(400)
+                return
             with SESS_LOCK:
                 d = load_sessions()
-                members = []
-                for sk in srckeys:
-                    e = get_session(d, sk)
-                    if not e or e.get("type") == "group":
-                        continue
-                    if any(m.get("srckey") == sk for m in members):
-                        continue   # 同一联系人勾两次只算一个，防分身串号
-                    nm = (e.get("name") or "成员").strip()
-                    i = 2   # 重名成员会让@路由分不清人，加编号区分
-                    while nm in [m["name"] for m in members]:
-                        nm = (e.get("name") or "成员") + str(i)
-                        i += 1
-                    av = load_look_of(sk).get("avatar_claude") or ""
-                    members.append({
-                        "name": nm, "srckey": sk, "sid": "",
-                        "model": e.get("model", ""), "effort": e.get("effort", ""),
-                        "read": 0,
-                        # 独立外观存档：建群时定格快照，源会话之后怎么变怎么删都不影响
-                        "avatar": av if sticker_path(av) else "",
-                    })
-                if len(members) < 2:
-                    self.send_error(400)
-                    return
                 g = new_session_entry(gname)
                 g["type"] = "group"
                 g["members"] = members
+                g["owner"] = "user"       # 群主：初始是用户，可在成员名单里交给某个成员
+                g["notice"] = ""
+                g["user_name"] = "用户"
                 d["list"].insert(0, g)
                 d["active"] = g["key"]
                 save_sessions(d)
             self._send_bytes(json.dumps(g, ensure_ascii=False).encode("utf-8"),
                              "application/json; charset=utf-8")
+            return
+        if self.path in ("/group/notice", "/group/owner",
+                         "/group/member_rename", "/group/user_name"):
+            # 群管理：公告（仅群主是用户时可从界面改）、指定群主、改成员昵称、改用户昵称
+            n = int(self.headers.get("Content-Length", 0))
+            try:
+                p = json.loads(self.rfile.read(n).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                self.send_error(400)
+                return
+            key = str(p.get("key", ""))
+            with SESS_LOCK:
+                d = load_sessions()
+                g = get_session(d, key)
+                if not g or g.get("type") != "group":
+                    self.send_error(404)
+                    return
+                msg = ""
+                if self.path == "/group/notice":
+                    if (g.get("owner") or "user") != "user":
+                        self._bad("群主是「%s」，只有群主能改公告" % group_owner_name(g), 403)
+                        return
+                    notice = str(p.get("notice") or "").strip()[:500]
+                    g["notice"] = notice
+                    uname = group_user_name(g)
+                    msg = ("%s更新了群公告：%s" % (uname, notice)) if notice \
+                        else ("%s清空了群公告" % uname)
+                elif self.path == "/group/owner":
+                    mid = str(p.get("mid") or "user")
+                    if mid != "user" and not any(
+                            m.get("mid") == mid for m in g.get("members", [])):
+                        self._bad("没有这个成员")
+                        return
+                    g["owner"] = mid
+                    msg = "群主变更为「%s」" % group_owner_name(g)
+                elif self.path == "/group/user_name":
+                    name = str(p.get("name") or "").strip()
+                    err = check_nickname(g, name, "user")
+                    if err:
+                        self._bad(err)
+                        return
+                    old = group_user_name(g)
+                    g["user_name"] = name
+                    msg = "用户「%s」把自己的群昵称改为「%s」" % (old, name)
+                else:   # /group/member_rename
+                    mid = str(p.get("mid") or "")
+                    name = str(p.get("name") or "").strip()
+                    mm = None
+                    for x in g.get("members", []):
+                        if x.get("mid") == mid:
+                            mm = x
+                            break
+                    if not mm:
+                        self._bad("没有这个成员")
+                        return
+                    err = check_nickname(g, name, mid)
+                    if err:
+                        self._bad(err)
+                        return
+                    old = mm["name"]
+                    mm["name"] = name
+                    msg = "%s把「%s」的群昵称改为「%s」" % (group_user_name(g), old, name)
+                save_sessions(d)
+                if msg:
+                    append_group_msg(key, "system", "系统", msg, tell=True)
+            self._send_bytes(b"ok", "text/plain")
             return
         if self.path == "/session/new":
             with SESS_LOCK:
@@ -1371,20 +1634,32 @@ class Handler(BaseHTTPRequestHandler):
                 elif self.path == "/session/rename":
                     name = str(p.get("name", "")).strip()[:50]
                     if name:
+                        old_name = e.get("name") or ""
                         e["name"] = name
-                        if e.get("type") != "group":
+                        if e.get("type") == "group":
+                            if old_name != name:   # 成员下一轮从转录里知道群改名了
+                                append_group_msg(key, "system", "系统",
+                                                 "群名已改为「%s」" % name, tell=True)
+                        else:
                             # 同步群里分身的登记名：改完名@新名字才叫得到人
                             for g2 in d["list"]:
                                 for mm in (g2.get("members") or []):
-                                    if mm.get("srckey") == key:
-                                        nn = name
-                                        others = [x["name"] for x in g2["members"]
-                                                  if x is not mm]
-                                        i2 = 2
-                                        while nn in others:
-                                            nn = name + str(i2)
-                                            i2 += 1
+                                    if mm.get("srckey") != key:
+                                        continue
+                                    # 走同一套昵称校验：重名加编号；保留词/超长/含@就不同步
+                                    nn = None
+                                    for i2 in range(1, 10):
+                                        cand = name if i2 == 1 else name + str(i2)
+                                        if not check_nickname(g2, cand, mm.get("mid")):
+                                            nn = cand
+                                            break
+                                    if nn and nn != mm.get("name"):
+                                        old_mn = mm.get("name") or ""
                                         mm["name"] = nn
+                                        append_group_msg(
+                                            g2["key"], "system", "系统",
+                                            "「%s」随私聊会话改名，群昵称变为「%s」" % (old_mn, nn),
+                                            tell=True)
                 elif self.path == "/session/pin":
                     if "pin" not in p:
                         self.send_error(400)   # 缺字段就报错，别把漏写当"取消置顶"
@@ -1614,6 +1889,15 @@ class Handler(BaseHTTPRequestHandler):
                 SENDING.discard(skey)
         return
 
+    def _bad(self, msg, code=400):
+        """带原因的失败：纯文本正文，前端原样给用户看。"""
+        data = msg.encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def _ndjson_error(self, msg):
         """/send 是流式接口：出错也按流的约定回，别甩HTML错误页给脚本"""
         self.send_response(200)
@@ -1842,7 +2126,8 @@ class Handler(BaseHTTPRequestHandler):
         if member.get("sid"):
             cmd += ["--resume", member["sid"]]
         rel = member.get("avatar") or ""
-        minfo = {"name": member["name"], "avatar": rel if sticker_path(rel) else ""}
+        minfo = {"name": member["name"], "avatar": rel if sticker_path(rel) else "",
+                 "mid": member.get("mid") or ""}
         try:
             proc = subprocess.Popen(
                 cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -1912,21 +2197,29 @@ class Handler(BaseHTTPRequestHandler):
                 "thinks": thinks, "stopped": stopped, "rc": proc.returncode,
                 "err": ("".join(err_buf)).strip()[-800:]}
 
-    def _member_prompt(self, gkey, member, all_names, images, fresh):
+    def _member_prompt(self, g, member, images, fresh):
         """拼一个成员这轮看到的内容：新成员给开场白，老成员给转录增量。
         fresh=True 表示会话链刚重开，把全量转录补给它。"""
+        gkey = g["key"]
         start = 0 if fresh else member.get("read", 0)
-        msgs, _ = read_group_msgs(gkey, start)
+        msgs, total = read_group_msgs(gkey, start)
+        member["_seen"] = total   # 拼提示词时转录的总条数：落账推已读指针时要对照
         parts = []
         if fresh:
-            parts.append(group_intro(member["name"], all_names))
+            parts.append(group_intro(g, member))
             if msgs:
                 parts.append("[群聊转录]\n" + transcript_text(msgs))
-        elif msgs:
-            parts.append("[群聊转录·你上次发言之后的新消息]\n" + transcript_text(msgs))
+        else:
+            if member.get("intro_v") != 2:
+                # 群功能升级前入群的老成员：补一次群状态和新能力，只补这一回
+                parts.append("[群状态补课]\n" + group_state_text(g) +
+                             "\n（你可以在回复里单独一行写 [[改名:新昵称]] 改自己的群昵称；"
+                             "群主可写 [[公告:内容]] 改群公告；标题栏⋯菜单里有公告和成员名单。）")
+            if msgs:
+                parts.append("[群聊转录·你上次发言之后的新消息]\n" + transcript_text(msgs))
         if images:
             parts.append("(用户发的图片，请先用Read工具查看: " + " ; ".join(images) + ")")
-        bad_prev = STK_WARN.pop(gkey + "/" + member["name"], None)
+        bad_prev = STK_WARN.pop(gkey + "/" + (member.get("mid") or member["name"]), None)
         if bad_prev:
             parts.append(stk_warn_text(bad_prev))
         parts.append("请以「" + member["name"] + "」的身份就上面的对话发言。")
@@ -1947,7 +2240,7 @@ class Handler(BaseHTTPRequestHandler):
         gkey = sess["key"]
         members = sess.get("members") or []
         all_names = [m["name"] for m in members]
-        append_group_msg(gkey, "user", "用户", text, imgs=up_names, stk=stk_rels)
+        append_group_msg(gkey, "user", group_user_name(sess), text, imgs=up_names, stk=stk_rels)
         # @路由：长名字先匹配防前缀重叠；按@出现的位置排队——@谁在前谁先说
         tmp = text.replace("＠", "@")   # 中文输入法的全角＠一视同仁
         if re.search(r"(?<![A-Za-z0-9._%+-])@(所有人|全体成员|全员)", tmp):
@@ -1976,49 +2269,103 @@ class Handler(BaseHTTPRequestHandler):
         last_reply = ""
         try:
             for m in targets:
+                # 每次发言前重读群条目：前面的成员（或用户在界面上）可能刚改了名/公告，
+                # 后面的要看到最新的；自己的昵称也以盘上为准，别拿 /send 时的快照
+                with SESS_LOCK:
+                    g_now = get_session(load_sessions(), gkey) or sess
+                for x in g_now.get("members", []):
+                    if (m.get("mid") and x.get("mid") == m.get("mid")) or \
+                            (not m.get("mid") and x.get("name") == m["name"]):
+                        m["name"] = x["name"]
+                        break
                 self._emit({"kind": "status", "text": "「" + m["name"] + "」正在回复"})
                 fresh = not m.get("sid")
+                run_m = dict(m)
+                # 群级 effort 对本群所有成员统一；空=跟 CLI 默认。老群成员建群时冻结的
+                # 成员级 effort 不再单独生效，否则状态栏显示「默认」实际却按旧值跑
+                eff = g_now.get("effort") or ""
+                run_m["effort"] = eff if eff in EFFORTS else ""
                 r = self._run_member(
-                    m, self._member_prompt(gkey, m, all_names, images, fresh), rid)
+                    run_m, self._member_prompt(g_now, m, images, fresh), rid)
                 if r["rc"] != 0 and not r["text"] and not r["stopped"] and not fresh:
                     # 旧会话链接不上：重开一条，把全量转录补给它，重试一次
                     m["sid"] = ""
+                    run_m["sid"] = ""
                     self._emit({"kind": "note",
                                 "text": "「" + m["name"] + "」的会话接不上了，已重开并补发群记录"})
                     r = self._run_member(
-                        m, self._member_prompt(gkey, m, all_names, images, True), rid)
+                        run_m, self._member_prompt(g_now, m, images, True), rid)
                 if r["rc"] != 0 and not r["text"] and not r["stopped"]:
                     etxt = ("「" + m["name"] + "」响应失败：" +
                             (r["err"] or ("claude退出码 %s" % r["rc"])))
                     self._emit({"kind": "error", "text": etxt})
                     append_group_msg(gkey, "system", "系统", etxt[:300])
-                # 落账：按名字匹配（群内唯一）。这轮失败就不推进已读指针，
+                # 回复里的 [[改名:x]] / [[公告:x]] 标签：摘出来单独处理，不进转录正文
+                new_name = new_notice = None
+                if r["text"]:
+                    r["text"], new_name, new_notice = extract_group_tags(r["text"])
+                # 落账：按 mid 匹配（老群没 mid 的按名字）。这轮失败就不推进已读指针，
                 # 没送达的消息下一轮还能补给他，群内认知不错位
                 ok = bool(r["text"]) or (r["rc"] == 0 and not r["stopped"])
+                notes = []
                 with SESS_LOCK:
                     d = load_sessions()
                     g = get_session(d, gkey)
                     if g:
                         for mm in g.get("members", []):
-                            if mm.get("name") == m["name"]:
-                                if r["sid"]:
-                                    mm["sid"] = r["sid"]
-                                for tk in r.get("thinks") or []:
-                                    append_group_msg(gkey, "member", m["name"],
-                                                     tk, think=True)
-                                if r["text"]:
-                                    append_group_msg(gkey, "member", m["name"],
-                                                     canonicalize_stickers(r["text"]))
-                                if ok:
-                                    _, tot = read_group_msgs(gkey, 0)
-                                    mm["read"] = tot
-                                break
+                            same = (mm.get("mid") == m.get("mid")) if m.get("mid") \
+                                else (mm.get("name") == m["name"])
+                            if not same:
+                                continue
+                            if r["sid"]:
+                                mm["sid"] = r["sid"]
+                            _, before = read_group_msgs(gkey, 0)
+                            for tk in r.get("thinks") or []:
+                                append_group_msg(gkey, "member", mm["name"],
+                                                 tk, think=True, mid=mm.get("mid"))
+                            if r["text"]:
+                                append_group_msg(gkey, "member", mm["name"],
+                                                 canonicalize_stickers(r["text"]),
+                                                 mid=mm.get("mid"))
+                            if ok:
+                                _, tot = read_group_msgs(gkey, 0)
+                                seen = m.get("_seen")
+                                # 它生成期间若有人从界面写了公告/改名通知（落在它读过的
+                                # 之后、它自己发言之前），指针停在那些通知前，下轮补看
+                                mm["read"] = tot if (seen is None or before <= seen) else seen
+                                mm["intro_v"] = 2   # 已经知道群名/公告/改名规则
+                            if new_name is not None and new_name == mm["name"]:
+                                new_name = None   # 改成自己现在的名字：不算改名，不发通知
+                            if new_name is not None:
+                                err = check_nickname(g, new_name, mm.get("mid"))
+                                if err:
+                                    notes.append("「%s」想改名为「%s」，没成功：%s"
+                                                 % (mm["name"], new_name, err))
+                                else:
+                                    notes.append("「%s」改名为「%s」" % (mm["name"], new_name))
+                                    mm["name"] = new_name
+                                    m["name"] = new_name
+                            if new_notice is not None:
+                                if (g.get("owner") or "user") == mm.get("mid"):
+                                    g["notice"] = new_notice[:500]
+                                    notes.append(
+                                        ("群主「%s」更新了群公告：%s" % (mm["name"], g["notice"]))
+                                        if g["notice"] else "群主「%s」清空了群公告" % mm["name"])
+                                else:
+                                    notes.append("「%s」不是群主，改公告没有生效" % mm["name"])
+                            break
+                        # 通知条落在成员自己的发言之后；它的已读指针停在通知之前，
+                        # 下一轮从转录里看到结果，知道改名成没成
+                        for nt in notes:
+                            append_group_msg(gkey, "system", "系统", nt, tell=True)
                         save_sessions(d)
+                for nt in notes:
+                    self._emit({"kind": "note", "text": nt})
                 if r["text"]:
                     last_reply = r["text"]
                     bad_stk = unresolved_stickers(r["text"])
                     if bad_stk:
-                        STK_WARN[gkey + "/" + m["name"]] = bad_stk
+                        STK_WARN[gkey + "/" + (m.get("mid") or m["name"])] = bad_stk
                 if r["stopped"]:
                     gnote = "已停止，后面的成员不再发言" if len(targets) > 1 else "已停止"
                     append_group_msg(gkey, "system", "系统", gnote)
@@ -2133,6 +2480,7 @@ def main():
     ensure_sticker_dir()
     ensure_sessions()
     migrate_member_avatars()
+    migrate_group_fields()
     try:
         srv = SingleInstanceServer(("127.0.0.1", PORT), Handler)
     except OSError:

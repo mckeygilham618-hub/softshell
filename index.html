@@ -176,21 +176,47 @@
     padding: 6px 10px; font-size: 13px; cursor: pointer;
   }
   #newgroup:hover { background: #fff; }
-  #gpanel {
+  #gpanel, #gdlg {
     position: fixed; display: none; left: 50%; top: 45%;
     transform: translate(-50%, -50%); background: #fff; border-radius: 12px;
     box-shadow: 0 8px 40px rgba(0,0,0,.25); padding: 16px; z-index: 100; width: 300px;
   }
-  #gpanel.open { display: block; }
-  #gpanel h3 { margin: 0 0 10px; font-size: 15px; }
-  #gpanel input[type=text] {
+  #gdlg { width: 380px; max-width: 92vw; }
+  #gpanel.open, #gdlg.open { display: block; }
+  #gpanel h3, #gdlg h3 { margin: 0 0 10px; font-size: 15px; }
+  #gpanel input[type=text], #gdlg textarea {
     width: 100%; border: 1px solid #ddd; border-radius: 6px; padding: 7px 9px;
     font: inherit; outline: none; margin-bottom: 6px;
   }
-  #gpanel input[type=text]:focus { border-color: #07c160; }
-  .glist { max-height: 220px; overflow-y: auto; }
-  .gitem { display: flex; gap: 8px; align-items: center; padding: 6px 4px; cursor: pointer; }
+  #gpanel input[type=text]:focus, #gdlg textarea:focus { border-color: #07c160; }
+  #gdlg textarea { resize: vertical; min-height: 90px; }
+  .glist { max-height: 300px; overflow-y: auto; }
+  .gitem { display: flex; gap: 8px; align-items: center; padding: 5px 4px; }
   .gitem:hover { background: #f6f6f6; border-radius: 6px; }
+  .gitem .gmn { flex: 1; font-size: 14px; }
+  .gitem input.gcnt {
+    width: 54px; border: 1px solid #ddd; border-radius: 6px; padding: 4px 6px;
+    font: inherit; outline: none; text-align: center;
+  }
+  .gitem input.gcnt:focus { border-color: #07c160; }
+  .ghint { font-size: 12px; color: #999; margin: 2px 0 6px; line-height: 1.5; }
+  .gtext { font-size: 14px; line-height: 1.6; max-height: 40vh; overflow-y: auto; padding: 2px 0 6px; }
+  .mlist { max-height: 50vh; overflow-y: auto; }
+  .mrow { display: flex; gap: 8px; align-items: center; padding: 6px 2px; font-size: 13px; }
+  .mrow .mav {
+    width: 30px; height: 30px; border-radius: 4px; flex: none; background: #fff;
+    box-shadow: 0 1px 1px rgba(0,0,0,.1); overflow: hidden;
+  }
+  .mrow .mav.user { background: #07c160; }
+  .mrow .mav img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .mrow .mnm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mrow .mmd { color: #999; font-size: 12px; margin-left: 6px; }
+  .mrow .crown { color: #d29b00; font-size: 12px; margin-left: 6px; }
+  .mrow button {
+    border: 1px solid #ccc; background: #fbfbfb; border-radius: 6px;
+    padding: 3px 8px; cursor: pointer; font: inherit; font-size: 12px; flex: none;
+  }
+  .mrow button:hover { background: #fff; }
   .gbtns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
   .gbtns button {
     border: 1px solid #ccc; background: #fbfbfb; border-radius: 6px;
@@ -207,11 +233,12 @@
   #thinkstate:hover { color: #555; }
 
   /* ── 查找 / 置顶 / 回放 ── */
-  #searchbtn {
+  #searchbtn, #morebtn {
     position: absolute; right: 10px; top: 7px; background: none; border: 1px solid #ccc;
     border-radius: 5px; padding: 3px 9px; font-size: 13px; cursor: pointer;
   }
-  #searchbtn:hover { background: #eee; }
+  #searchbtn:hover, #morebtn:hover { background: #eee; }
+  #morebtn { font-weight: 700; letter-spacing: 1px; }
   .conv.pinned:not(.on) { background: #ececec; }
   .conv.pinned:not(.on):hover { background: #e3e3e3; }
   #spanel {
@@ -339,7 +366,7 @@
 </style>
 
 <div id="sidebar">
-  <div id="sbtop"><button id="newconv">＋ 新会话</button><button id="newgroup" title="把几个会话拉进一个群">👥 群</button></div>
+  <div id="sbtop"><button id="newconv">＋ 新会话</button><button id="newgroup" title="选型号和数量，拉个群">👥 群</button></div>
   <div id="convlist"></div>
 </div>
 <div id="ctxmenu">
@@ -352,8 +379,21 @@
 <div id="gpanel">
   <h3>拉个群</h3>
   <input type="text" id="gname" placeholder="群名（可留空）">
+  <div class="ghint">选型号、填数量。同一型号可以拉多个（如 Fable 5.1 填 2），入群后各自独立，可以在群里给它们设不同身份</div>
   <div class="glist" id="glist"></div>
   <div class="gbtns"><button id="gcancel">取消</button><button id="gok" class="primary">建群</button></div>
+</div>
+<div id="gdlg">
+  <h3 id="gdtitle"></h3>
+  <div id="gdbody"></div>
+  <div class="gbtns" id="gdbtns"></div>
+</div>
+<div class="popmenu" id="gmenu" style="right:10px;left:auto;top:44px;bottom:auto">
+  <div class="mtitle">群</div>
+  <div class="mi" data-g="search"><span>查找聊天记录</span></div>
+  <div class="mi" data-g="notice"><span>群公告</span></div>
+  <div class="mi" data-g="members"><span>群成员名单</span></div>
+  <div class="mi" data-g="myname"><span>改我的群昵称</span></div>
 </div>
 <div class="popmenu" id="atmenu" style="left:250px;right:auto;bottom:64px"></div>
 <div id="calloverlay">
@@ -377,7 +417,7 @@
   <div id="sresults"></div>
 </div>
 <div id="main">
-<header><span id="convtitle">Claude</span><button id="searchbtn" title="查找聊天内容">🔍</button></header>
+<header><span id="convtitle">Claude</span><button id="searchbtn" title="查找聊天内容">🔍</button><button id="morebtn" title="群菜单：查找 / 公告 / 成员名单 / 昵称" style="display:none">⋯</button></header>
 <div id="chat"></div>
 <div id="strip"></div>
 <div id="panel">
@@ -398,12 +438,13 @@
 <div class="popmenu" id="modelmenu">
   <div class="mtitle">模型</div>
   <div class="mi" data-model=""><span>默认（跟随 CLI 设置）</span><span class="chk">✓</span></div>
-  <div class="mi" data-model="fable"><span>Fable 5</span><span><span class="chk">✓ </span><span class="num">1</span></span></div>
+  <div class="mi" data-model="fable"><span>Fable 5.1</span><span><span class="chk">✓ </span><span class="num">1</span></span></div>
   <div class="mi" data-model="opus"><span>Opus 5</span><span><span class="chk">✓ </span><span class="num">2</span></span></div>
   <div class="mi" data-model="sonnet"><span>Sonnet 5</span><span><span class="chk">✓ </span><span class="num">3</span></span></div>
   <div class="mi" data-model="haiku"><span>Haiku 4.5</span><span><span class="chk">✓ </span><span class="num">4</span></span></div>
   <div class="mi" id="moretoggle"><span>更多模型</span><span>›</span></div>
   <div id="morewrap" style="display:none">
+    <div class="mi" data-model="claude-fable-5"><span>Fable 5</span><span class="chk">✓</span></div>
     <div class="mi" data-model="claude-opus-4-8"><span>Opus 4.8</span><span class="chk">✓</span></div>
     <div class="mi" data-model="claude-opus-4-7"><span>Opus 4.7</span><span class="chk">✓</span></div>
     <div class="mi" data-model="claude-opus-4-6"><span>Opus 4.6</span><span class="chk">✓</span></div>
@@ -614,6 +655,7 @@
       d.innerHTML = '<div class="avatar claude mavatar">' + img + '</div>' +
         '<div class="bcol"><div class="mname">' + esc(member.name || '') + '</div>' +
         inner + '</div>';
+      if (member.mid) d.dataset.mid = member.mid;   // 改昵称后能就地换署名
     }
     else if (cls === 'bot') d.innerHTML = avatarHtml('claude') + inner;
     else if (cls === 'user') d.innerHTML = inner + avatarHtml('user');
@@ -657,6 +699,7 @@
 
   /* 单独成行的 [[表情:xxx]] → 微信式独立表情消息（裸图无框） */
   var STK_LINE = /^\s*\[\[(?:表情|sticker)[:：]\s*([^\]]+?)\s*\]\]\s*$/;
+  var GTAG_LINE = /^\s*\[\[(?:改名|昵称|rename|公告|notice)[:：].*\]\]\s*$/;   // 群成员的改名/改公告标签
   function nakedSticker(cls, id, member) {
     var d = bubble(cls, '<img class="sticker" src="' + stickerUrl(id) + '">', member);
     d.querySelector('.bubble').classList.add('naked');
@@ -674,6 +717,7 @@
       var mm = !inFence && ln.match(STK_LINE);   // 代码围栏里的标签是内容，不拆
       var id = mm && stkResolve(mm[1]);
       if (id) { flush(); rows.push(nakedSticker('bot', id, member)); }
+      else if (!inFence && member && GTAG_LINE.test(ln)) { /* 群成员的改名/公告标签：桥接处理后出系统条，气泡里不显示 */ }
       else buf.push(ln);
     });
     flush();
@@ -851,6 +895,20 @@
     document.getElementById('convlist').innerHTML = h;
     var cur = SESSIONS.filter(function (s) { return s.key === SKEY; })[0];
     document.getElementById('convtitle').textContent = (cur && cur.name) || 'Claude';
+    refreshGroupNames(cur);
+  }
+  // 群成员改了昵称：屏幕上已有的气泡署名和状态栏成员列表就地跟上，不用刷新页面
+  function refreshGroupNames(cur) {
+    if (!cur || cur.type !== 'group') return;
+    var byMid = {};
+    (cur.members || []).forEach(function (m) { if (m.mid) byMid[m.mid] = m.name; });
+    chat.querySelectorAll('.row.bot[data-mid]').forEach(function (r) {
+      var nm = byMid[r.dataset.mid], el = r.querySelector('.mname');
+      if (nm && el && el.textContent !== nm) el.textContent = nm;
+    });
+    document.getElementById('grouphint').textContent =
+      '成员：' + (cur.members || []).map(function (x) { return x.name; })
+        .join('、') + '（@名字点名，@所有人全员发言）';
   }
   function loadSessions() {
     return fetch('/sessions').then(function (r) { return r.json(); })
@@ -863,6 +921,8 @@
   function switchConv(key) {
     if (key === SKEY || busy) return;   // 运行中不切，免得流串到别的窗口
     closeSearch();   // 搜索结果是上一个会话的快照，跨会话点击会串号
+    closeDlg();      // 公告/成员名单弹窗也是上一个会话的
+    closeMenus();
     snapshotChat();
     SKEY = key;
     fetch('/session/switch', {
@@ -883,6 +943,7 @@
     fetch('/session/new', { method: 'POST' })
       .then(function (r) { return r.json(); })
       .then(function (e) {
+        closeDlg();
         snapshotChat();
         SKEY = e.key;
         chat.innerHTML = '';
@@ -961,15 +1022,12 @@
   var gpanel = document.getElementById('gpanel');
   document.getElementById('newgroup').addEventListener('click', function () {
     if (busy) return;
-    var cands = SESSIONS.filter(function (s) { return s.type !== 'group'; });
-    if (cands.length < 2) {
-      alert('至少要有两个普通会话才能拉群。\n先用「＋新会话」多养几个不同的Claude吧。');
-      return;
-    }
+    // 直接按型号拉人，不依赖私聊会话。成员初始昵称=型号名，同型号多个自动编号
     var h = '';
-    cands.forEach(function (s) {
-      h += '<label class="gitem"><input type="checkbox" value="' + s.key + '">' +
-           '<span>' + esc(s.name || '未命名') + '</span></label>';
+    Object.keys(MODEL_NAMES).forEach(function (k) {
+      h += '<div class="gitem"><span class="gmn">' + esc(MODEL_NAMES[k]) + '</span>' +
+           '<input type="number" class="gcnt" min="0" max="9" value="0" data-model="' +
+           esc(k) + '"></div>';
     });
     document.getElementById('glist').innerHTML = h;
     document.getElementById('gname').value = '';
@@ -980,28 +1038,31 @@
   });
   document.getElementById('gok').addEventListener('click', function () {
     if (busy) return;   // 运行中建群会把残余流灌进新群窗口
-    var keys = [];
-    gpanel.querySelectorAll('input[type=checkbox]:checked').forEach(function (c) {
-      keys.push(c.value);
+    var specs = [], total = 0;
+    gpanel.querySelectorAll('input.gcnt').forEach(function (c) {
+      var n = Math.min(9, Math.max(0, parseInt(c.value, 10) || 0));
+      if (n > 0) { specs.push({ model: c.dataset.model, count: n }); total += n; }
     });
-    if (keys.length < 2) { alert('至少勾选两个会话'); return; }
+    if (total < 2) { alert('至少拉两个成员（同一型号填 2 也算）'); return; }
     fetch('/group/new', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: document.getElementById('gname').value.trim(), srckeys: keys
+        name: document.getElementById('gname').value.trim(), members: specs
       })
     }).then(function (r) {
-      if (!r.ok) { alert('建群失败：桥接返回 ' + r.status + '（可能有效会话不足2个）'); return null; }
+      if (!r.ok) { alert('建群失败：桥接返回 ' + r.status); return null; }
       return r.json();
     }).then(function (g) {
         if (!g) return;
         gpanel.classList.remove('open');
         closeSearch();
+        closeDlg();
         snapshotChat();
         SKEY = g.key;
         chat.innerHTML = '';
         chip('群建好了。@成员名字点名发言，可以@多个人；' +
-             '不@人的话，话会记在群里，他们下次发言时能看到');
+             '不@人的话，话会记在群里，他们下次发言时能看到。' +
+             '右上角⋯里有群公告、成员名单和改昵称；状态栏 effort 对全群成员生效');
         return loadSessions().then(loadLook);
       }).catch(function () { alert('建群失败：桥接没响应'); });
   });
@@ -1034,6 +1095,155 @@
   });
   document.addEventListener('click', function () { atmenu.classList.remove('open'); });
 
+  /* ── 群菜单（标题栏⋯）：查找 / 群公告 / 成员名单 / 昵称 ── */
+  var morebtn = document.getElementById('morebtn');
+  var gmenu = document.getElementById('gmenu');
+  var gdlg = document.getElementById('gdlg');
+  function gpost(path, body) {
+    // 群管理接口：失败时桥接回一句原因（400/403 纯文本），原样给用户看
+    return fetch(path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      return r.text().then(function (t) {
+        if (!r.ok) throw new Error(t || ('桥接返回 ' + r.status));
+        return t;
+      });
+    });
+  }
+  function openDlg(title, bodyHtml, btns) {
+    document.getElementById('gdtitle').textContent = title;
+    document.getElementById('gdbody').innerHTML = bodyHtml;
+    var bb = document.getElementById('gdbtns');
+    bb.innerHTML = '';
+    btns.forEach(function (b) {
+      var el = document.createElement('button');
+      el.textContent = b.label;
+      if (b.primary) el.className = 'primary';
+      el.addEventListener('click', b.onClick);
+      bb.appendChild(el);
+    });
+    gdlg.dataset.skey = SKEY;   // 记住是哪个会话开的：切走后按钮不许作用到别的会话
+    gdlg.classList.add('open');
+  }
+  function closeDlg() { gdlg.classList.remove('open'); }
+  function ownerNameOf(g) {
+    var ow = g.owner || 'user';
+    if (ow === 'user') return g.user_name || '用户';
+    var m = (g.members || []).filter(function (x) { return x.mid === ow; })[0];
+    return m ? m.name : (g.user_name || '用户');
+  }
+  function showNotice(g) {
+    if ((g.owner || 'user') === 'user') {
+      openDlg('群公告',
+        '<textarea id="gnotice" rows="6" maxlength="500" placeholder="群规、议题、身份分配……成员发言前都会看到">' +
+        esc(g.notice || '') + '</textarea>' +
+        '<div class="ghint">你是群主。保存后成员下次发言时会看到新公告（500字以内）</div>',
+        [{ label: '取消', onClick: closeDlg },
+         { label: '保存', primary: true, onClick: function () {
+           if (g.key !== SKEY) { closeDlg(); return; }   // 弹窗开着时切了会话
+           var v = document.getElementById('gnotice').value.trim();
+           gpost('/group/notice', { key: g.key, notice: v }).then(function () {
+             closeDlg();
+             chip(v ? '群公告已更新，成员下次发言时会看到' : '群公告已清空');
+             loadSessions();
+           }).catch(function (e) { alert('没保存成：' + e.message); });
+         } }]);
+    } else {
+      openDlg('群公告',
+        '<div class="gtext">' + (g.notice ? md(g.notice) : '<span style="color:#999">（暂无公告）</span>') + '</div>' +
+        '<div class="ghint">群主是「' + esc(ownerNameOf(g)) + '」，只有群主能改公告。' +
+        '想自己改：到成员名单里收回群主</div>',
+        [{ label: '关闭', onClick: closeDlg }]);
+    }
+  }
+  function showMembers(g) {
+    var ow = g.owner || 'user';
+    var h = '<div class="mlist">';
+    h += '<div class="mrow"><div class="mav user"></div>' +
+         '<div class="mnm">' + esc(g.user_name || '用户') + '<span class="mmd">你（人类）</span>' +
+         (ow === 'user' ? '<span class="crown">👑 群主</span>' : '') + '</div>' +
+         '<button data-act="myname">改昵称</button>' +
+         (ow !== 'user' ? '<button data-act="owner" data-mid="user">收回群主</button>' : '') +
+         '</div>';
+    (g.members || []).forEach(function (m) {
+      h += '<div class="mrow"><div class="mav">' +
+           (m.avatar ? '<img src="' + stickerUrl(m.avatar) + '">' : '') + '</div>' +
+           '<div class="mnm" title="' + esc(m.name) + '">' + esc(m.name) +
+           '<span class="mmd">' + esc(MODEL_NAMES[m.model] || m.model || '默认型号') + '</span>' +
+           (ow === m.mid ? '<span class="crown">👑 群主</span>' : '') + '</div>' +
+           '<button data-act="rename" data-mid="' + esc(m.mid || '') + '">改昵称</button>' +
+           (ow !== m.mid ? '<button data-act="owner" data-mid="' + esc(m.mid || '') + '">设为群主</button>' : '') +
+           '</div>';
+    });
+    h += '</div><div class="ghint">成员也能自己改昵称（回复里单独一行写 [[改名:新昵称]]）；群公告只有群主能改</div>';
+    openDlg('群成员名单（' + ((g.members || []).length + 1) + '人）', h,
+            [{ label: '关闭', onClick: closeDlg }]);
+  }
+  function renameMe(g) {
+    if (busy) { alert('这一轮还在跑，等成员说完再改'); return; }
+    var old = g.user_name || '用户';
+    var v = prompt('你在本群的昵称（20字以内）：', old);
+    if (v === null) return;
+    v = v.trim();
+    if (!v || v === old) return;
+    gpost('/group/user_name', { key: g.key, name: v }).then(function () {
+      chip('你的群昵称已改为「' + v + '」');
+      return loadSessions();
+    }).then(function () {
+      if (gdlg.classList.contains('open')) showMembers(curSess());
+    }).catch(function (e) { alert('没改成：' + e.message); });
+  }
+  document.getElementById('gdbody').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-act]');
+    if (!b) return;
+    if (gdlg.dataset.skey && gdlg.dataset.skey !== SKEY) { closeDlg(); return; }
+    var g = curSess();
+    if (!g || g.type !== 'group') return;
+    if (busy) { alert('这一轮还在跑，等成员说完再改'); return; }
+    var act = b.dataset.act, mid = b.dataset.mid;
+    if (act === 'myname') { renameMe(g); return; }
+    var m = (g.members || []).filter(function (x) { return x.mid === mid; })[0];
+    if (act === 'rename') {
+      if (!m) return;
+      var v = prompt('给「' + m.name + '」改群昵称（20字以内）：', m.name);
+      if (v === null) return;
+      v = v.trim();
+      if (!v || v === m.name) return;
+      gpost('/group/member_rename', { key: g.key, mid: mid, name: v }).then(function () {
+        chip('「' + m.name + '」已改名为「' + v + '」，成员下次发言时会知道');
+        return loadSessions();
+      }).then(function () { showMembers(curSess()); })
+        .catch(function (e) { alert('没改成：' + e.message); });
+    } else if (act === 'owner') {
+      var nm = mid === 'user' ? (g.user_name || '用户') : (m ? m.name : '');
+      if (!nm) return;
+      if (!confirm('把群主交给「' + nm + '」？群公告只有群主能改。')) return;
+      gpost('/group/owner', { key: g.key, mid: mid }).then(function () {
+        chip('群主现在是「' + nm + '」');
+        return loadSessions();
+      }).then(function () { showMembers(curSess()); })
+        .catch(function (e) { alert('没设成：' + e.message); });
+    }
+  });
+  morebtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    closeMenus();
+    gmenu.classList.toggle('open');
+  });
+  gmenu.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var mi = e.target.closest('.mi');
+    if (!mi || !mi.dataset.g) return;
+    gmenu.classList.remove('open');
+    var g = curSess();
+    if (!g || g.type !== 'group') return;
+    if (mi.dataset.g === 'search') openSearch();
+    else if (mi.dataset.g === 'notice') showNotice(g);
+    else if (mi.dataset.g === 'members') showMembers(g);
+    else if (mi.dataset.g === 'myname') renameMe(g);
+  });
+
   /* ── 聊天档案：回放 / 查找 / 置顶 / 导出 ── */
   function snapshotChat() {
     // 高亮黄框是临时的：先摘掉再存缓存，免得切回来时永久复活
@@ -1045,6 +1255,7 @@
     SEARCH_LIST = [];   // 搜索快照跟会话走，切走就作废
   }
   var HIST_AVATARS = {};   // 群成员名 → 头像（回放时用）
+  var HIST_MEMBERS = {};   // mid → {name, avatar}：改过昵称的成员，旧消息也按现名显示
   function recHtml(m) {   // 文字+上传图（表情包另行独立成条）
     var h = m.text ? md(m.text) : '';
     (m.imgs || []).forEach(function (x) {
@@ -1061,11 +1272,13 @@
       var h = recHtml(m);
       if (h) rows.push(bubble('user', h));
     } else {
+      var cm = m.mid && HIST_MEMBERS[m.mid];
       var mem = m.who === 'member'
-        ? { name: m.name || '', avatar: HIST_AVATARS[m.name] || '' } : null;
+        ? { name: cm ? cm.name : (m.name || ''), mid: m.mid || '',
+            avatar: cm ? cm.avatar : (HIST_AVATARS[m.name] || '') } : null;
       if (m.think) {
         rows = [bubble('thought',
-          (m.who === 'member' ? esc(m.name) + '：' : '') + md(m.text || ''))];
+          (m.who === 'member' ? esc(mem.name) + '：' : '') + md(m.text || ''))];
       }
       else rows = botSay(m.text || '', mem);
       (m.stk || []).forEach(function (x) { rows.push(nakedSticker('bot', x, mem)); });
@@ -1081,6 +1294,7 @@
         // 切走了 / 有更新的回放请求 / 用户已开始发消息：都不许整屏重画
         if (key !== SKEY || seq !== histSeq || busy) return;
         HIST_AVATARS = h.avatars || {};
+        HIST_MEMBERS = h.members || {};
         chat.innerHTML = '';
         var list = h.list || [];
         var start = full ? 0 : Math.max(0, list.length - 300);
@@ -1098,13 +1312,14 @@
   var sCat = 'all';
   var LINK_RE = /https?:\/\/[^\s)"'<>\]]+/;
   var PATH_RE = /(?:[A-Za-z]:[\\\/]|~\/)[^\s"'<>|?*]+/;
-  document.getElementById('searchbtn').addEventListener('click', function () {
+  function openSearch() {
     if (busy) return;   // 流式进行中定位会整屏重画，等这轮结束
     fetch('/history?key=' + encodeURIComponent(SKEY))
       .then(function (r) { return r.json(); })
       .then(function (h) {
         SEARCH_LIST = h.list || [];
         HIST_AVATARS = h.avatars || HIST_AVATARS;
+        HIST_MEMBERS = h.members || HIST_MEMBERS;
         sCat = 'all';
         sqEl.value = '';
         paintSTabs();
@@ -1112,7 +1327,8 @@
         spanel.classList.add('open');
         sqEl.focus();
       }).catch(function () { chip('搜索打不开：桥接没响应'); });
-  });
+  }
+  document.getElementById('searchbtn').addEventListener('click', openSearch);
   document.getElementById('sclose').addEventListener('click', function () {
     spanel.classList.remove('open');
   });
@@ -1120,6 +1336,10 @@
     if (e.key === 'Escape' && spanel.classList.contains('open')) {
       e.preventDefault();   // 这下Esc用来关面板，不触发停止
       spanel.classList.remove('open');
+    }
+    else if (e.key === 'Escape' && gdlg.classList.contains('open')) {
+      e.preventDefault();
+      gdlg.classList.remove('open');
     }
   });
   function paintSTabs() {
@@ -1163,7 +1383,7 @@
       if (sCat === 'file' && !PATH_RE.test(txt)) continue;
       if (q && txt.toLowerCase().indexOf(q) < 0) continue;
       h += '<div class="sitem" data-mi="' + i + '">' +
-           '<div class="srow1"><b>' + esc(m.name || '?') + '</b>' +
+           '<div class="srow1"><b>' + esc((m.mid && HIST_MEMBERS[m.mid]) ? HIST_MEMBERS[m.mid].name : (m.name || '?')) + '</b>' +
            '<span>' + fmtTime(m.ts) + '</span></div>' +
            '<div class="ssnip">' + esc(snippetOf(m, q)) + '</div></div>';
       shown++;
@@ -1309,16 +1529,17 @@
       var h = await (await fetch('/history?key=' + encodeURIComponent(key))).json();
       var lk = await (await fetch('/look?key=' + encodeURIComponent(key))).json();
       // 离屏渲染：临时接管全局，走同一份渲染器，网页版与聊天窗像素级同源
-      var realChat = chat, realLook = LOOK, realAv = HIST_AVATARS;
+      var realChat = chat, realLook = LOOK, realAv = HIST_AVATARS, realMem = HIST_MEMBERS;
       chat = document.createElement('div');
       LOOK = lk || {};
       HIST_AVATARS = h.avatars || {};
+      HIST_MEMBERS = h.members || {};
       var rowsHtml = '';
       try {
         (h.list || []).forEach(function (m, i) { renderRec(m, i); });
         rowsHtml = chat.innerHTML;
       } catch (e) {}
-      chat = realChat; LOOK = realLook; HIST_AVATARS = realAv;
+      chat = realChat; LOOK = realLook; HIST_AVATARS = realAv; HIST_MEMBERS = realMem;
       if (!rowsHtml) { chip('导出网页版失败：渲染出错'); return; }
       rowsHtml = rowsHtml.replace(/class="row thought"/g, 'class="row thought open"');
       // 资产冻结：每张图只嵌一次（CSS类引用去重），并缩到显示尺寸再嵌，
@@ -1789,8 +2010,8 @@
   var modelmenu = document.getElementById('modelmenu');
   var effortmenu = document.getElementById('effortmenu');
   var MODEL_NAMES = {
-    fable: 'Fable 5', opus: 'Opus 5', sonnet: 'Sonnet 5', haiku: 'Haiku 4.5',
-    'claude-opus-4-8': 'Opus 4.8', 'claude-opus-4-7': 'Opus 4.7',
+    fable: 'Fable 5.1', opus: 'Opus 5', sonnet: 'Sonnet 5', haiku: 'Haiku 4.5',
+    'claude-fable-5': 'Fable 5', 'claude-opus-4-8': 'Opus 4.8', 'claude-opus-4-7': 'Opus 4.7',
     'claude-opus-4-6': 'Opus 4.6', 'claude-sonnet-4-6': 'Sonnet 4.6',
     opusplan: 'OpusPlan'
   };
@@ -1799,14 +2020,15 @@
   function applyPrefs() {
     var cur = curSess();
     var isGrp = !!(cur && cur.type === 'group');
-    // 群里每个成员各用各的模型（跟单聊联系人走），整群没有统一模型可切
+    // 群里每个成员各是各的型号，没有统一模型可切；effort 是群级的，对全体成员生效
     modelbtn.style.display = isGrp ? 'none' : '';
-    effortbtn.style.display = isGrp ? 'none' : '';
+    effortbtn.style.display = '';
+    document.getElementById('searchbtn').style.display = isGrp ? 'none' : '';
+    document.getElementById('morebtn').style.display = isGrp ? '' : 'none';
     var gh = document.getElementById('grouphint');
     if (isGrp) {
       gh.style.display = '';
-      gh.textContent = '成员：' + (cur.members || []).map(function (x) { return x.name; })
-        .join('、') + '（@名字点名，@所有人全员发言）';
+      refreshGroupNames(cur);
     } else { gh.style.display = 'none'; }
     var m = LOOK.model || '', e = LOOK.effort || '';
     modelbtn.textContent = m ? (MODEL_NAMES[m] || m) : '默认模型';
@@ -1822,6 +2044,7 @@
     modelmenu.classList.remove('open');
     effortmenu.classList.remove('open');
     document.getElementById('voicemenu').classList.remove('open');
+    document.getElementById('gmenu').classList.remove('open');
     document.getElementById('morewrap').style.display = 'none';
   }
   function setPref(key, val, label) {
@@ -1866,8 +2089,10 @@
     e.stopPropagation();
     var mi = e.target.closest('.mi');
     if (mi && mi.dataset.effort !== undefined) {
+      var cs = curSess();
       setPref('effort', mi.dataset.effort,
-              mi.dataset.effort ? 'Effort ' + EFFORT_NAMES[mi.dataset.effort] : '默认 effort');
+              (mi.dataset.effort ? 'Effort ' + EFFORT_NAMES[mi.dataset.effort] : '默认 effort') +
+              ((cs && cs.type === 'group') ? '（本群所有成员通用）' : ''));
     }
   });
   document.addEventListener('click', closeMenus);
@@ -2067,7 +2292,7 @@
     curRid = null; curAbort = null;
     setBusy(false);
     loadLook();       // Claude 这轮要是换了头像/背景，回复一结束就生效
-    loadSessions();   // 会话名/摘要/时间也可能变了
+    loadSessions().then(applyPrefs);   // 会话名/摘要/时间也可能变了；群成员改了名，状态栏也要跟上
     updateWordCount();
     ta.focus();
   }
