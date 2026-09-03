@@ -46,6 +46,8 @@
   }
   .ctime { font-size: 11px; color: #b0b0b0; flex: none; }
   .conv.on .ctime { color: rgba(255,255,255,.75); }
+  .conv.running .ctime::before { content: '●'; color: #07c160; margin-right: 3px; }
+  .conv.on.running .ctime::before { color: #fff; }
   .clast {
     font-size: 12px; color: #a0a0a0; white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; margin-top: 2px;
@@ -446,9 +448,12 @@
   var tabsEl = document.getElementById('tabs');
   var gridEl = document.getElementById('grid');
   var emobtn = document.getElementById('emobtn');
-  var busy = false;
-  var curRid = null;      // 本次请求的id，停止时告诉后端杀哪个
-  var curAbort = null;    // 中断前端的流式读取
+  // 每个会话各自一轮：切走了流照跑，事件先记着，切回来重放档案再接上
+  var RUNS = {};          // 会话key → {rid, abort, status, stats, attached, typing, statEl, queue}
+  var RUN_CTX = null;     // handle() 执行期间指向事件所属的那一轮
+  var LASTSTATS = {};     // 会话key → 状态栏"上轮"统计文字
+  var LAST_HIST = [];     // 最近一次回放拿到的档案列表（切回运行中会话时对账用）
+  function busyNow() { return !!RUNS[SKEY]; }   // 只看当前会话自己
   var pending = [];
 
   /* ── 多会话 ── */
@@ -627,25 +632,31 @@
     chat.scrollTop = chat.scrollHeight;
     return d;
   }
-  /* 运行状态：让用户分得清"正常干活"和"卡死了" */
-  var curStatus = '', statT0 = 0, statTimer = null, statEl = null;
-  function setStatus(s) {
-    curStatus = s;
+  /* 运行状态：让用户分得清"正常干活"和"卡死了"。状态挂在各自那一轮上，
+     只有当前会话且正显示在屏幕上的那一轮才往气泡里画 */
+  function setStatus(str) {
+    var r = RUN_CTX || RUNS[SKEY];
+    if (!r) return;
+    r.status = str;
     paintStatus();
   }
   function paintStatus() {
-    if (!statEl) return;
-    var sec = Math.floor((Date.now() - statT0) / 1000);
-    statEl.textContent = curStatus + (sec >= 3 ? '（' + sec + 's）' : '…');
+    var r = RUNS[SKEY];
+    if (!r || !r.attached || !r.statEl) return;
+    var sec = Math.floor((Date.now() - r.statT0) / 1000);
+    r.statEl.textContent = r.status + (sec >= 3 ? '（' + sec + 's）' : '…');
   }
+  setInterval(paintStatus, 1000);
+  // 对讲机沿用的旧接口：它绑定当前会话，一轮就是当前会话的一轮
   function startStatus(el) {
-    statEl = el; statT0 = Date.now();
+    var r = RUNS[SKEY];
+    if (!r) return;
+    r.statEl = el; r.statT0 = Date.now();
     setStatus('连接中');
-    statTimer = setInterval(paintStatus, 1000);
   }
   function stopStatus() {
-    if (statTimer) clearInterval(statTimer);
-    statTimer = null; statEl = null;
+    var r = RUNS[SKEY];
+    if (r) r.statEl = null;
   }
 
   /* 单独成行的 [[表情:xxx]] → 微信式独立表情消息（裸图无框） */
@@ -692,11 +703,14 @@
       setStatus(who + '正在用 ' + ev.name);
     }
     else if (ev.kind === 'stats') {
-      roundStats.tin += ev.tin || 0;
-      roundStats.tout += ev.tout || 0;
-      roundStats.cr += ev.cr || 0;
-      roundStats.ms += ev.ms || 0;
-      if (ev.cut) roundStats.cut = true;
+      var rs = (RUN_CTX || RUNS[SKEY] || {}).stats;
+      if (rs) {
+        rs.tin += ev.tin || 0;
+        rs.tout += ev.tout || 0;
+        rs.cr += ev.cr || 0;
+        rs.ms += ev.ms || 0;
+        if (ev.cut) rs.cut = true;
+      }
     }
     else if (ev.kind === 'session') setStatus('等待Claude响应');
     else if (ev.kind === 'status') setStatus(ev.text);
@@ -832,7 +846,8 @@
     var h = '';
     SESSIONS.forEach(function (s) {
       h += '<div class="conv' + (s.key === SKEY ? ' on' : '') +
-        (s.pin ? ' pinned' : '') + '" data-key="' + s.key + '">' +
+        (s.pin ? ' pinned' : '') + (RUNS[s.key] ? ' running' : '') +
+        '" data-key="' + s.key + '">' +
         (s.type === 'group'
           ? '<div class="cava grp">👥</div>'
           : '<div class="cava">' + (s.avatar
@@ -868,21 +883,39 @@
         renderConvs();
       }).catch(function () {});
   }
+  // 离开当前会话：在跑的不存快照（切回来整体重放档案再接流），没在跑的存快照
+  function leaveCurrent() {
+    var r = RUNS[SKEY];
+    if (r) { detachRun(r); delete chatCache[SKEY]; }
+    else snapshotChat();
+  }
   function switchConv(key) {
-    if (key === SKEY || busy) return;   // 运行中不切，免得流串到别的窗口
+    if (key === SKEY) return;
     if (WK.on) endWalkie();             // 对讲机跟着会话走，切走就挂断
     closeSearch();   // 搜索结果是上一个会话的快照，跨会话点击会串号
     closeDlg();      // 公告/成员名单弹窗也是上一个会话的
     closeMenus();
-    snapshotChat();
+    leaveCurrent();
     SKEY = key;
     fetch('/session/switch', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key: key })
     }).catch(function () {});
-    chat.innerHTML = chatCache[key] || '';
-    chat.scrollTop = chat.scrollHeight;
-    if (!chatCache[key]) renderHistory(key);   // 本窗口没看过：从档案回放
+    var run = RUNS[key];
+    if (run) {
+      // 这个会话正在后台跑：先把档案（已完成的段落）重放出来，再把流接上
+      chat.innerHTML = '';
+      renderHistory(key).then(function () {
+        if (SKEY !== key || RUNS[key] !== run) return;
+        replayQueue(run);
+        attachRun(run);
+      });
+    } else {
+      chat.innerHTML = chatCache[key] || '';
+      chat.scrollTop = chat.scrollHeight;
+      if (!chatCache[key]) renderHistory(key);   // 本窗口没看过：从档案回放
+    }
+    paintBusy();
     updateThinkState();
     updateWordCount();
     renderConvs();
@@ -890,14 +923,14 @@
     ta.focus();
   }
   document.getElementById('newconv').addEventListener('click', function () {
-    if (busy) return;
     fetch('/session/new', { method: 'POST' })
       .then(function (r) { return r.json(); })
       .then(function (e) {
         closeDlg();
-        snapshotChat();
+        leaveCurrent();
         SKEY = e.key;
         chat.innerHTML = '';
+        paintBusy();
         return loadSessions().then(loadLook);
       }).catch(function () {});
   });
@@ -949,10 +982,10 @@
     startRename(ctxKey);
   });
   document.getElementById('ctxdelete').addEventListener('click', function () {
-    if (busy) return;   // 运行中删会话会让残余流灌进别的窗口
     var s = SESSIONS.filter(function (x) { return x.key === ctxKey; })[0];
     if (!s) return;
     if (!confirm('删除会话「' + (s.name || '未命名') + '」？\n（只删软壳里的列表项，Claude Code 的会话档案不动）')) return;
+    stopRunFor(ctxKey);   // 正在跑的先停掉，别让它在删掉的会话里继续烧
     fetch('/session/delete', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key: ctxKey })
@@ -972,7 +1005,6 @@
   }
   var gpanel = document.getElementById('gpanel');
   document.getElementById('newgroup').addEventListener('click', function () {
-    if (busy) return;
     // 直接按型号拉人，不依赖私聊会话。成员初始昵称=型号名，同型号多个自动编号
     var h = '';
     Object.keys(MODEL_NAMES).forEach(function (k) {
@@ -988,7 +1020,6 @@
     gpanel.classList.remove('open');
   });
   document.getElementById('gok').addEventListener('click', function () {
-    if (busy) return;   // 运行中建群会把残余流灌进新群窗口
     var specs = [], total = 0;
     gpanel.querySelectorAll('input.gcnt').forEach(function (c) {
       var n = Math.min(9, Math.max(0, parseInt(c.value, 10) || 0));
@@ -1008,9 +1039,10 @@
         gpanel.classList.remove('open');
         closeSearch();
         closeDlg();
-        snapshotChat();
+        leaveCurrent();
         SKEY = g.key;
         chat.innerHTML = '';
+        paintBusy();
         chip('群建好了。@成员名字点名发言，可以@多个人；' +
              '不@人的话，话会记在群里，他们下次发言时能看到。' +
              '右上角⋯里有群公告、成员名单和改昵称；状态栏 effort 对全群成员生效');
@@ -1132,7 +1164,7 @@
             [{ label: '关闭', onClick: closeDlg }]);
   }
   function renameMe(g) {
-    if (busy) { alert('这一轮还在跑，等成员说完再改'); return; }
+    if (busyNow()) { alert('这一轮还在跑，等成员说完再改'); return; }
     var old = g.user_name || '用户';
     var v = prompt('你在本群的昵称（20字以内）：', old);
     if (v === null) return;
@@ -1151,7 +1183,7 @@
     if (gdlg.dataset.skey && gdlg.dataset.skey !== SKEY) { closeDlg(); return; }
     var g = curSess();
     if (!g || g.type !== 'group') return;
-    if (busy) { alert('这一轮还在跑，等成员说完再改'); return; }
+    if (busyNow()) { alert('这一轮还在跑，等成员说完再改'); return; }
     var act = b.dataset.act, mid = b.dataset.mid;
     if (act === 'myname') { renameMe(g); return; }
     var m = (g.members || []).filter(function (x) { return x.mid === mid; })[0];
@@ -1243,11 +1275,13 @@
       .then(function (r) { return r.json(); })
       .then(function (h) {
         // 切走了 / 有更新的回放请求 / 用户已开始发消息：都不许整屏重画
-        if (key !== SKEY || seq !== histSeq || busy) return;
+        if (key !== SKEY || seq !== histSeq) return;
+        if (RUNS[key] && RUNS[key].attached) return;   // 流正往屏幕上画，不整屏重画
         HIST_AVATARS = h.avatars || {};
         HIST_MEMBERS = h.members || {};
         chat.innerHTML = '';
         var list = h.list || [];
+        LAST_HIST = list;
         var start = full ? 0 : Math.max(0, list.length - 300);
         if (start > 0) chip('（更早的 ' + start + ' 条没展开，点🔍能搜到）');
         for (var i = start; i < list.length; i++) renderRec(list[i], i);
@@ -1264,7 +1298,7 @@
   var LINK_RE = /https?:\/\/[^\s)"'<>\]]+/;
   var PATH_RE = /(?:[A-Za-z]:[\\\/]|~\/)[^\s"'<>|?*]+/;
   function openSearch() {
-    if (busy) return;   // 流式进行中定位会整屏重画，等这轮结束
+    if (busyNow()) return;   // 流式进行中定位会整屏重画，等这轮结束
     fetch('/history?key=' + encodeURIComponent(SKEY))
       .then(function (r) { return r.json(); })
       .then(function (h) {
@@ -1355,7 +1389,7 @@
       setTimeout(function () { el.classList.remove('hl'); }, 2200);
     }
     if (chat.querySelector('[data-mi="' + idx + '"]')) flash();
-    else if (!busy) renderHistory(SKEY, true).then(flash);   // 不在视图里：全量重放再跳
+    else if (!busyNow()) renderHistory(SKEY, true).then(flash);   // 不在视图里：全量重放再跳
   });
 
   /* thinking 折叠：点标题单个开合；状态栏💭和右键菜单都能一键全开/全合 */
@@ -1798,7 +1832,7 @@
   }
 
   async function startWalkie() {
-    if (busy) return;
+    if (busyNow()) return;
     var st;
     try {
       st = await (await fetch('/call/start', {
@@ -2134,37 +2168,105 @@
     return m[f.type] || 'png';
   }
 
-  async function stopRun() {
-    if (!busy) return;
-    var rid = curRid;
-    btn.textContent = '停止中';
-    try {
-      await fetch('/stop', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rid: rid })
-      });
-    } catch (e) { /* 后端已经没了也无所谓 */ }
-    if (curAbort) { try { curAbort.abort(); } catch (e) {} }
+  function stopRunFor(key) {
+    var run = RUNS[key];
+    if (!run) return;
+    if (key === SKEY) btn.textContent = '停止中';
+    if (!run.rid) return;   // 对讲机的一轮没有请求id，由它自己的挂断流程收尾
+    fetch('/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rid: run.rid })
+    }).catch(function () { /* 后端已经没了也无所谓 */ }).then(function () {
+      if (run.abort) { try { run.abort.abort(); } catch (e) {} }
+    });
   }
+  function stopRun() { stopRunFor(SKEY); }
 
-  function setBusy(on) {
-    busy = on;
+  // 发送键和状态栏只反映当前会话自己的那一轮
+  function paintBusy() {
+    var on = busyNow();
     btn.disabled = false;
     btn.textContent = on ? '■' : '发送';
     btn.title = on ? '停止（Esc）' : '';
     btn.classList.toggle('stopping', on);
+    document.getElementById('laststats').textContent = LASTSTATS[SKEY] || '';
+  }
+  function newRun(key, rid, abort) {
+    return { key: key, rid: rid, abort: abort, status: '连接中', statT0: Date.now(),
+             stats: { tin: 0, tout: 0, cr: 0, ms: 0, cut: false },
+             attached: false, typing: null, statEl: null, queue: [] };
+  }
+  // 对讲机沿用的旧接口：给当前会话登记/注销一轮
+  function setBusy(on) {
+    if (on) {
+      if (!RUNS[SKEY]) RUNS[SKEY] = newRun(SKEY, null, null);
+      RUNS[SKEY].attached = true;
+    } else delete RUNS[SKEY];
+    paintBusy();
+    renderConvs();
+  }
+  // 把一轮接到屏幕上：补"正在输入"气泡，之后的事件实时画
+  function attachRun(run) {
+    run.typing = bubble('bot', '<span class="dots"></span>');
+    run.statEl = run.typing.querySelector('.dots');
+    run.attached = true;
+    paintStatus();
+    paintBusy();
+  }
+  function detachRun(run) {
+    run.attached = false;
+    run.statEl = null;
+    run.typing = null;
+  }
+  function statsText(st) {
+    if (!(st.tout || st.ms)) return '';
+    return (st.cut && !st.tout)
+      ? '上轮中断 · ' + Math.round(st.ms / 1000) + 's（token不可计量）'
+      : '上轮 ↑' + fmtTok(st.tin) +
+        (st.cr ? '（缓存' + fmtTok(st.cr) + '）' : '') +
+        ' ↓' + fmtTok(st.tout) +
+        ' · ' + Math.round(st.ms / 1000) + 's' +
+        (st.cut ? '（含中断轮）' : '');
+  }
+  function runHandle(run, ev) {
+    RUN_CTX = run;
+    try { handle(ev); } finally { RUN_CTX = null; }
+  }
+  // 一轮的事件：显示在屏幕上就画；切走了只记账，切回来重放档案后再对账补画
+  function feedRun(run, ev) {
+    if (run.attached) {
+      runHandle(run, ev);
+      if (run.typing) { chat.appendChild(run.typing); chat.scrollTop = chat.scrollHeight; }
+    } else if (ev.kind === 'stats' || ev.kind === 'status' || ev.kind === 'session') {
+      runHandle(run, ev);   // 不碰屏幕的事件照常记
+    } else run.queue.push(ev);
+  }
+  function evText(ev) {
+    if (ev.kind === 'tool') return '⚙ ' + ev.name + (ev.detail ? ' · ' + ev.detail : '');
+    return ev.text || '';
+  }
+  // 切回运行中的会话：档案已重放，把切走期间攒的事件里档案没有的补画出来
+  // （桥接先写档案再发事件，所以档案里有的一律跳过）
+  function replayQueue(run) {
+    var q = run.queue; run.queue = [];
+    var recent = LAST_HIST.slice(-(q.length + 2)).map(function (r) { return r.text || ''; });
+    q.forEach(function (ev) {
+      if ((ev.kind === 'text' || ev.kind === 'thinking' || ev.kind === 'tool') &&
+          recent.indexOf(evText(ev)) >= 0) return;
+      runHandle(run, ev);
+    });
   }
 
-  var roundStats = { tin: 0, tout: 0, cr: 0, ms: 0, cut: false };
+  var roundStats = { tin: 0, tout: 0, cr: 0, ms: 0, cut: false };   // 对讲机旧接口还在赋值，留着
   function fmtTok(n) { return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n); }
 
   async function send(stickerId) {
-    if (busy) return;
-    roundStats = { tin: 0, tout: 0, cr: 0, ms: 0, cut: false };
+    if (busyNow()) return;
+    var skey = SKEY;   // 这一轮属于发出时的会话；用户中途切走，它照跑
     var text = stickerId ? '' : ta.value.trim();
     // 只剩零宽/空白字符＝空消息（emoji组合里的零宽连接符不受影响，这里只判空不删字）
-    if (text && !text.replace(/[​‌‍⁠﻿\s]+/g, '')) text = '';
+    if (text && !text.replace(/[\u200b\u200c\u200d\u2060\ufeff\s]+/g, '')) text = '';
     var imgs = stickerId ? [] : pending.slice();
     var stks = stickerId ? [stickerId] : [];
     if (!text && !imgs.length && !stks.length) return;
@@ -2174,16 +2276,17 @@
       pending = [];
       renderPending();
     }
-    curRid = 'r' + Date.now() + '-' + Math.floor(Math.random() * 100000);
-    curAbort = new AbortController();
-    setBusy(true);
+    var run = newRun(skey, 'r' + Date.now() + '-' + Math.floor(Math.random() * 100000),
+                     new AbortController());
+    RUNS[skey] = run;
+    paintBusy();
+    renderConvs();
 
     stks.forEach(function (id) { nakedSticker('user', id); });   // 表情包独立成条
     var uhtml = md(text);
     imgs.forEach(function (p) { uhtml += '<img src="' + p.url + '">'; });
     if (text || imgs.length) bubble('user', uhtml);
-    var typing = bubble('bot', '<span class="dots"></span>');
-    startStatus(typing.querySelector('.dots'));
+    attachRun(run);
 
     try {
       var paths = [];
@@ -2197,8 +2300,8 @@
       var res = await fetch('/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: text, images: paths, stickers: stks, rid: curRid, skey: SKEY, voice: curVoiceId() }),
-        signal: curAbort.signal
+        body: JSON.stringify({ text: text, images: paths, stickers: stks, rid: run.rid, skey: skey, voice: curVoiceId() }),
+        signal: run.abort.signal
       });
       var reader = res.body.getReader();
       var dec = new TextDecoder();
@@ -2214,45 +2317,39 @@
           if (!line) continue;
           var ev;
           try { ev = JSON.parse(line); } catch (e) { continue; }
-          handle(ev);
-          chat.appendChild(typing);
-          chat.scrollTop = chat.scrollHeight;
+          feedRun(run, ev);
         }
       }
     } catch (e) {
       if (!(e && e.name === 'AbortError')) {
         var hint = (e instanceof TypeError)
           ? '桥接没在运行——双击软壳文件夹里的 bridge.py 就能恢复，聊天窗口会自动重新打开'
-          : '连接断了：' + esc(String(e));
-        bubble('bot', '<span class="err">' + hint + '</span>');
+          : '连接断了：' + String(e);
+        feedRun(run, { kind: 'error', text: hint });
       }
     }
-    if (roundStats.tout || roundStats.ms) {
-      document.getElementById('laststats').textContent =
-        (roundStats.cut && !roundStats.tout)
-          ? '上轮中断 · ' + Math.round(roundStats.ms / 1000) + 's（token不可计量）'
-          : '上轮 ↑' + fmtTok(roundStats.tin) +
-            (roundStats.cr ? '（缓存' + fmtTok(roundStats.cr) + '）' : '') +
-            ' ↓' + fmtTok(roundStats.tout) +
-            ' · ' + Math.round(roundStats.ms / 1000) + 's' +
-            (roundStats.cut ? '（含中断轮）' : '');
+    var st = statsText(run.stats);
+    if (st) LASTSTATS[skey] = st;
+    if (run.typing) run.typing.remove();
+    if (RUNS[skey] === run) delete RUNS[skey];
+    if (skey === SKEY) {
+      if (!run.attached) { delete chatCache[skey]; renderHistory(skey); }   // 正在切回来的路上：按最终档案画
+      paintBusy();
+      loadLook();       // Claude 这轮要是换了头像/背景，回复一结束就生效
+      updateWordCount();
+      ta.focus();
+    } else {
+      delete chatCache[skey];   // 后台跑完的：切回去时从档案整体重放
     }
-    stopStatus();
-    typing.remove();
-    curRid = null; curAbort = null;
-    setBusy(false);
-    loadLook();       // Claude 这轮要是换了头像/背景，回复一结束就生效
     loadSessions().then(applyPrefs);   // 会话名/摘要/时间也可能变了；群成员改了名，状态栏也要跟上
-    updateWordCount();
-    ta.focus();
   }
 
   btn.addEventListener('click', function () {
-    if (busy) { stopRun(); } else { send(); }
+    if (busyNow()) { stopRun(); } else { send(); }
   });
   // Esc 也能停
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && busy && !e.defaultPrevented) {
+    if (e.key === 'Escape' && busyNow() && !e.defaultPrevented) {
       e.preventDefault();
       stopRun();
     }
