@@ -370,6 +370,8 @@
   <div class="mi" data-g="notice"><span>群公告</span></div>
   <div class="mi" data-g="members"><span>群成员名单</span></div>
   <div class="mi" data-g="myname"><span>改我的群昵称</span></div>
+  <div class="mi" data-g="room"><span>分组讨论</span></div>
+  <div class="mi" data-g="roomend"><span>结束分组讨论</span></div>
 </div>
 <div class="popmenu" id="atmenu" style="left:250px;right:auto;bottom:64px"></div>
 <div id="spanel">
@@ -861,7 +863,7 @@
         (s.pin ? ' pinned' : '') + (RUNS[s.key] ? ' running' : '') +
         '" data-key="' + s.key + '">' +
         (s.type === 'group'
-          ? '<div class="cava grp">👥</div>'
+          ? '<div class="cava grp">' + (s.room ? '🔒' : '👥') + '</div>'
           : '<div class="cava">' + (s.avatar
             ? '<img src="' + stickerUrl(s.avatar) + '">' : '') + '</div>') +
         '<div class="cmain"><div class="crow1">' +
@@ -1244,6 +1246,17 @@
   morebtn.addEventListener('click', function (e) {
     e.stopPropagation();
     closeMenus();
+    // 大厅群和讨论室的菜单项不一样：讨论室没有公告/名单/建室，多一个"结束"
+    var g = curSess();
+    var inRoom = !!(g && g.room);
+    var ended = !!(g && g.room && g.room.ended);
+    gmenu.querySelectorAll('.mi[data-g]').forEach(function (mi) {
+      var k = mi.dataset.g;
+      var show = true;
+      if (k === 'notice' || k === 'members' || k === 'myname' || k === 'room') show = !inRoom;
+      if (k === 'roomend') show = inRoom && !ended;
+      mi.style.display = show ? '' : 'none';
+    });
     gmenu.classList.toggle('open');
   });
   gmenu.addEventListener('click', function (e) {
@@ -1257,7 +1270,58 @@
     else if (mi.dataset.g === 'notice') showNotice(g);
     else if (mi.dataset.g === 'members') showMembers(g);
     else if (mi.dataset.g === 'myname') renameMe(g);
+    else if (mi.dataset.g === 'room') showRoomDlg(g);
+    else if (mi.dataset.g === 'roomend') endRoom(g);
   });
+  /* ── 分组讨论室：挑成员＋议题，建好后自动以议题开一轮 ── */
+  function showRoomDlg(g) {
+    if (busyNow()) { alert('这一轮还在跑，等成员说完再建'); return; }
+    var h = '<div class="mlist">';
+    (g.members || []).forEach(function (m) {
+      h += '<label class="mrow" style="cursor:pointer"><input type="checkbox" class="rmpick" value="' +
+           esc(m.mid || '') + '" style="margin-right:8px">' +
+           '<div class="mav">' + (m.avatar ? '<img src="' + stickerUrl(m.avatar) + '">' : '') + '</div>' +
+           '<div class="mnm">' + esc(m.name) + '<span class="mmd">' +
+           esc(MODEL_NAMES[m.model] || m.model || '默认型号') + '</span></div></label>';
+    });
+    h += '</div><input id="rmtopic" maxlength="100" placeholder="讨论议题（会作为开场话题）" ' +
+         'style="width:100%;box-sizing:border-box;margin-top:8px;padding:6px 8px">' +
+         '<div class="ghint">被选中的成员带着大厅记忆进室，室内的话大厅其他成员看不到；' +
+         '结束后他们带着讨论记忆回大厅。建好后会自动以议题@所有人开一轮，之后你在室内发言推进。</div>';
+    openDlg('分组讨论', h, [
+      { label: '取消', onClick: closeDlg },
+      { label: '建室并开始', primary: true, onClick: function () {
+        if (g.key !== SKEY) { closeDlg(); return; }
+        var mids = [];
+        document.querySelectorAll('#gdbody .rmpick:checked').forEach(function (c) { mids.push(c.value); });
+        var topic = document.getElementById('rmtopic').value.trim();
+        if (!mids.length) { alert('至少勾一个成员'); return; }
+        if (!topic) { alert('写一句讨论议题'); return; }
+        gpost('/group/room/new', { key: g.key, mids: mids, topic: topic }).then(function (t) {
+          var rm = JSON.parse(t);
+          closeDlg();
+          closeSearch();
+          leaveCurrent();
+          SKEY = rm.key;
+          chat.innerHTML = '';
+          paintBusy();
+          return loadSessions().then(loadLook).then(function () {
+            applyPrefs();
+            chip('分组讨论室已建好，室内的话大厅看不到。⋯菜单里可以结束讨论');
+            ta.value = '@所有人 ' + topic;
+            send();
+          });
+        }).catch(function (e) { alert('没建成：' + e.message); });
+      } }]);
+  }
+  function endRoom(g) {
+    if (busyNow()) { alert('这一轮还在跑，等成员说完再结束'); return; }
+    if (!confirm('结束分组讨论「' + (g.room.topic || '') + '」？\n成员会带着讨论记忆回到大厅，室内记录保留但不能再发言。')) return;
+    gpost('/group/room/end', { key: g.key }).then(function () {
+      chip('分组讨论已结束，成员回到大厅');
+      return loadSessions().then(applyPrefs);
+    }).catch(function (e) { alert('没结束成：' + e.message); });
+  }
 
   /* ── 聊天档案：回放 / 查找 / 置顶 / 导出 ── */
   function snapshotChat() {

@@ -602,6 +602,63 @@ def extract_group_tags(text):
     return "\n".join(out).strip(), name, notice
 
 
+RELAY_RULE = (
+    "【接茬】想让某位成员接着回应，在回复的最后单独一行写 @名字（那一行只写这一个@）。"
+    "正文里顺嘴提到的@不算点名。每条回复只有一个接茬名额，只点你认为最该接话的那一位；"
+    "@用户、@所有人不会触发接茬。一轮里接茬最多接力3次，同一成员不会被重复叫起。"
+)
+INTRO_V = 3   # 群规则版本：老成员低于此版本时补一次课（2→3 加了接茬与分组讨论）
+
+
+def room_intro(parent, room, member):
+    """成员第一次在分组讨论室里发言时的说明：身在何处、谁在场、保密。"""
+    names = "、".join(m["name"] for m in room.get("members", [])
+                      if m.get("mid") != member.get("mid")) or "（只有你）"
+    return ("(你现在在群「" + (parent.get("name") or "群聊") + "」的分组讨论室「" +
+            (room.get("room") or {}).get("topic", "") + "」里。室内只有：" +
+            group_user_name(parent) + "（人类）、你、" + names +
+            "。这里的话大厅里的其他成员看不到，是私下讨论；你带着大厅里的全部记忆进来，"
+            "什么时候结束由用户决定，结束后你会带着这里的记忆回到大厅。"
+            "室内同样可以用最后一行 @名字 点人接茬。)")
+
+
+def back_note(parent, topic):
+    return ("(分组讨论室「" + topic + "」已结束，你已回到群「" + (parent.get("name") or "群聊") +
+            "」大厅。大厅里没进室的成员不知道室内讨论的内容，那是室内的秘密，别主动泄露；"
+            "下面是你离开期间大厅的新消息。)")
+
+
+def relay_target(text, members, speaker, user_name):
+    """成员回复的最后一行若是 @某成员，返回那个成员；@自己/@用户/@所有人/非成员 → None。"""
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    if not lines:
+        return None
+    last = lines[-1].replace("＠", "@")
+    if not last.startswith("@"):
+        return None
+    if re.match(r"^@(所有人|全体成员|全员)", last):
+        return None
+    if last.startswith("@" + user_name):
+        return None
+    for m in sorted(members, key=lambda x: -len(x["name"])):
+        if last.startswith("@" + m["name"]):
+            if m.get("mid") and m.get("mid") == speaker.get("mid"):
+                return None
+            if not m.get("mid") and m["name"] == speaker["name"]:
+                return None
+            return m
+    return None
+
+
+def active_room_of(d, gkey, mid):
+    """成员当前在哪个进行中的讨论室（没有则 None）。"""
+    for e in d.get("list", []):
+        r = e.get("room") or {}
+        if r.get("parent") == gkey and not r.get("ended") and mid in (r.get("mids") or []):
+            return e
+    return None
+
+
 def group_intro(g, member):
     """新成员（或会话链重开的成员）的开场白：群名、群主、公告、成员、能力说明。"""
     me = member["name"]
@@ -626,8 +683,10 @@ def group_intro(g, member):
         "【群公告】只有群主能改。" + (
             "你是群主，可以在回复里单独一行写 [[公告:内容]] 更新公告（整条公告写在这一行里）。" if is_owner
             else "你不是群主，写 [[公告:…]] 不会生效。") + "\n"
+        + RELAY_RULE + "\n"
         "【界面】标题栏右上角的⋯菜单里有：查找聊天记录、群公告、群成员名单"
-        "（用户可在里面改成员昵称、指定群主）、用户改自己的群昵称；"
+        "（用户可在里面改成员昵称、指定群主）、用户改自己的群昵称、分组讨论"
+        "（用户可以把部分成员拉进一个分组讨论室私下讨论，大厅里的其他成员看不到室内的话）；"
         "状态栏的 effort 按钮对本群所有成员统一生效。\n"
         + STICKER_DIR + " 里有表情包，需要时可写 [[表情:文件名]] 发送"
         "（单独占一行，会显示成独立的一条表情消息；只写翻看后确认存在的文件名，"
@@ -1673,6 +1732,96 @@ class Handler(BaseHTTPRequestHandler):
             self._send_bytes(json.dumps(g, ensure_ascii=False).encode("utf-8"),
                              "application/json; charset=utf-8")
             return
+        if self.path == "/group/room/new":
+            # 分组讨论室：从大厅群里挑成员进一个私密的子会话；成员链不断，记忆自然带进带出
+            n = int(self.headers.get("Content-Length", 0))
+            try:
+                p = json.loads(decode_body(self.rfile.read(n)))
+            except (ValueError, UnicodeDecodeError):
+                self.send_error(400)
+                return
+            topic = str(p.get("topic") or "").strip()[:100] or "分组讨论"
+            mids = [str(x) for x in (p.get("mids") or []) if x]
+            with SESS_LOCK:
+                d = load_sessions()
+                g = get_session(d, str(p.get("key", "")))
+                if not g or g.get("type") != "group" or g.get("room"):
+                    self._bad("只能在群聊大厅里建分组讨论室", 404)
+                    return
+                picked = [m for m in g.get("members", []) if m.get("mid") in mids]
+                if not picked:
+                    self._bad("至少选一个成员")
+                    return
+                for m in picked:
+                    br = active_room_of(d, g["key"], m["mid"])
+                    if br:
+                        self._bad("「%s」已经在讨论室「%s」里了" % (
+                            m["name"], (br.get("room") or {}).get("topic", "")))
+                        return
+                rm = new_session_entry((g.get("name") or "群聊") + " · 分组：" + topic)
+                while get_session(d, rm["key"]):
+                    rm["key"] = "s%d" % (int(rm["key"][1:]) + 1)
+                rm["type"] = "group"
+                rm["room"] = {"parent": g["key"], "topic": topic, "ended": False,
+                              "mids": [m["mid"] for m in picked]}
+                rm["members"] = [{"mid": m["mid"], "name": m["name"], "model": m.get("model", ""),
+                                  "effort": "", "sid": m.get("sid", ""), "read": 0,
+                                  "avatar": m.get("avatar", ""), "intro_v": INTRO_V}
+                                 for m in picked]
+                rm["owner"] = "user"
+                rm["notice"] = ""
+                rm["user_name"] = g.get("user_name") or "用户"
+                try:
+                    i = d["list"].index(g)
+                except ValueError:
+                    i = 0
+                d["list"].insert(i + 1, rm)
+                d["active"] = rm["key"]
+                save_sessions(d)
+                names = "、".join(m["name"] for m in picked)
+            append_group_msg(g["key"], "system", "系统",
+                             "%s把%s拉进了分组讨论室「%s」，讨论期间他们不在大厅"
+                             % (group_user_name(g), names, topic), tell=True)
+            self._send_bytes(json.dumps(rm, ensure_ascii=False).encode("utf-8"),
+                             "application/json; charset=utf-8")
+            return
+        if self.path == "/group/room/end":
+            n = int(self.headers.get("Content-Length", 0))
+            try:
+                p = json.loads(decode_body(self.rfile.read(n)))
+            except (ValueError, UnicodeDecodeError):
+                self.send_error(400)
+                return
+            with SESS_LOCK:
+                d = load_sessions()
+                rm = get_session(d, str(p.get("key", "")))
+                if not rm or not rm.get("room"):
+                    self._bad("这不是分组讨论室", 404)
+                    return
+                if rm["room"].get("ended"):
+                    self._bad("这个讨论已经结束过了")
+                    return
+                rm["room"]["ended"] = True
+                if not str(rm.get("name", "")).startswith("【已结束】"):
+                    rm["name"] = "【已结束】" + (rm.get("name") or "")
+                topic = rm["room"].get("topic", "")
+                pg = get_session(d, rm["room"].get("parent", ""))
+                names = "、".join(m["name"] for m in rm.get("members", []))
+                if pg:
+                    for px in pg.get("members", []):
+                        if px.get("mid") in (rm["room"].get("mids") or []):
+                            px["back_from"] = topic   # 下次在大厅开口前先告诉它回来了
+                    if rm.get("key") == d.get("active"):
+                        d["active"] = pg["key"]
+                save_sessions(d)
+            append_group_msg(rm["key"], "system", "系统",
+                             "%s结束了分组讨论，%s回到大厅" % (group_user_name(rm), names), tell=True)
+            if pg:
+                append_group_msg(pg["key"], "system", "系统",
+                                 "分组讨论室「%s」结束，%s回到了大厅" % (topic, names), tell=True)
+            self._send_bytes(json.dumps({"parent": pg["key"] if pg else ""}).encode("utf-8"),
+                             "application/json; charset=utf-8")
+            return
         if self.path in ("/group/notice", "/group/owner",
                          "/group/member_rename", "/group/user_name"):
             # 群管理：公告（仅群主是用户时可从界面改）、指定群主、改成员昵称、改用户昵称
@@ -2403,24 +2552,36 @@ class Handler(BaseHTTPRequestHandler):
                 "thinks": thinks, "stopped": stopped, "rc": proc.returncode,
                 "err": ("".join(err_buf)).strip()[-800:]}
 
-    def _member_prompt(self, g, member, images, fresh):
+    def _member_prompt(self, g, member, images, fresh, parent=None):
         """拼一个成员这轮看到的内容：新成员给开场白，老成员给转录增量。
-        fresh=True 表示会话链刚重开，把全量转录补给它。"""
+        fresh=True 表示会话链刚重开，把全量转录补给它。
+        parent 非空表示 g 是分组讨论室，parent 是它所属的大厅群。"""
         gkey = g["key"]
         start = 0 if fresh else member.get("read", 0)
         msgs, total = read_group_msgs(gkey, start)
         member["_seen"] = total   # 拼提示词时转录的总条数：落账推已读指针时要对照
         parts = []
-        if fresh:
+        if parent is not None and not member.get("room_intro"):
+            # 第一次在讨论室里开口：先说明身在何处（链没断，大厅记忆它本来就有）
+            if fresh:
+                parts.append(group_intro(parent, member))
+            parts.append(room_intro(parent, g, member))
+            member["_room_intro_due"] = True
+        elif fresh:
             parts.append(group_intro(g, member))
+        if parent is None and member.get("back_from"):
+            parts.append(back_note(g, member["back_from"]))
+            member["_back_done"] = True
+        if fresh:
             if msgs:
                 parts.append("[群聊转录]\n" + transcript_text(msgs))
         else:
-            if member.get("intro_v") != 2:
+            if (member.get("intro_v") or 0) < INTRO_V:
                 # 群功能升级前入群的老成员：补一次群状态和新能力，只补这一回
                 parts.append("[群状态补课]\n" + group_state_text(g) +
                              "\n（你可以在回复里单独一行写 [[改名:新昵称]] 改自己的群昵称；"
-                             "群主可写 [[公告:内容]] 改群公告；标题栏⋯菜单里有公告和成员名单。）")
+                             "群主可写 [[公告:内容]] 改群公告；标题栏⋯菜单里有公告、成员名单和分组讨论。）\n" +
+                             RELAY_RULE)
             if msgs:
                 parts.append("[群聊转录·你上次发言之后的新消息]\n" + transcript_text(msgs))
         if images:
@@ -2428,7 +2589,8 @@ class Handler(BaseHTTPRequestHandler):
         bad_prev = STK_WARN.pop(gkey + "/" + (member.get("mid") or member["name"]), None)
         if bad_prev:
             parts.append(stk_warn_text(bad_prev))
-        parts.append("请以「" + member["name"] + "」的身份就上面的对话发言。")
+        parts.append("请以「" + member["name"] + "」的身份就上面的对话发言。"
+                     "（要点人接茬就在最后单独一行写 @名字，只能点一个。）")
         return "\n\n".join(parts)
 
     def _handle_group(self, sess, text, images, up_names, stk_rels, rid):
@@ -2446,6 +2608,19 @@ class Handler(BaseHTTPRequestHandler):
         gkey = sess["key"]
         members = sess.get("members") or []
         all_names = [m["name"] for m in members]
+        room = sess.get("room") or None
+        parent = None
+        if room:
+            if room.get("ended"):
+                self._emit({"kind": "error", "text": "这个分组讨论已经结束，不能再发言（记录仍可查看和导出）"})
+                self._emit({"kind": "done"})
+                return
+            with SESS_LOCK:
+                parent = get_session(load_sessions(), room.get("parent", ""))
+            if not parent:
+                self._emit({"kind": "error", "text": "这个讨论室所属的群已经不在了"})
+                self._emit({"kind": "done"})
+                return
         append_group_msg(gkey, "user", group_user_name(sess), text, imgs=up_names, stk=stk_rels)
         # @路由：长名字先匹配防前缀重叠；按@出现的位置排队——@谁在前谁先说
         tmp = text.replace("＠", "@")   # 中文输入法的全角＠一视同仁
@@ -2473,26 +2648,71 @@ class Handler(BaseHTTPRequestHandler):
             self._emit({"kind": "done"})
             return
         last_reply = ""
+        # 接茬接力：先把用户@到的人按顺序说完，再按回复顺序逐条看最后一行的@，
+        # 有效的排进队列接着说；最多接力3次，同一成员不重复叫起
+        queue = list(targets)
+        replies = []          # [(成员, 回复正文)] 按产生顺序
+        scan_idx = 0
+        relay_used = 0
+        relayed = set()
+        uname = group_user_name(sess)
         try:
-            for m in targets:
+            while True:
+                if not queue:
+                    while scan_idx < len(replies) and relay_used < 3:
+                        spk, txt = replies[scan_idx]
+                        scan_idx += 1
+                        with SESS_LOCK:
+                            g_scan = get_session(load_sessions(), gkey) or sess
+                        tgt = relay_target(txt, g_scan.get("members", []), spk, uname)
+                        if not tgt:
+                            continue
+                        tid = tgt.get("mid") or tgt["name"]
+                        if tid in relayed:
+                            continue
+                        relayed.add(tid)
+                        relay_used += 1
+                        queue.append(dict(tgt))
+                        self._emit({"kind": "note",
+                                    "text": "「%s」点名「%s」接茬（接力 %d/3）"
+                                            % (spk["name"], tgt["name"], relay_used)})
+                        break
+                    if not queue:
+                        break
+                m = queue.pop(0)
                 # 每次发言前重读群条目：前面的成员（或用户在界面上）可能刚改了名/公告，
                 # 后面的要看到最新的；自己的昵称也以盘上为准，别拿 /send 时的快照
                 with SESS_LOCK:
-                    g_now = get_session(load_sessions(), gkey) or sess
-                for x in g_now.get("members", []):
+                    d_now = load_sessions()
+                    g_now = get_session(d_now, gkey) or sess
+                    p_now = get_session(d_now, room["parent"]) if room else None
+                    # 讨论室：成员真身在大厅群里，昵称和会话链以大厅为准
+                    src = p_now if p_now else g_now
+                for x in src.get("members", []):
                     if (m.get("mid") and x.get("mid") == m.get("mid")) or \
                             (not m.get("mid") and x.get("name") == m["name"]):
                         m["name"] = x["name"]
+                        if room:
+                            m["sid"] = x.get("sid") or ""
                         break
+                if not room and m.get("mid"):
+                    with SESS_LOCK:
+                        busy_room = active_room_of(load_sessions(), gkey, m["mid"])
+                    if busy_room:
+                        gnote = ("「%s」正在分组讨论室「%s」里，这轮没叫到"
+                                 % (m["name"], (busy_room.get("room") or {}).get("topic", "")))
+                        append_group_msg(gkey, "system", "系统", gnote)
+                        self._emit({"kind": "note", "text": gnote})
+                        continue
                 self._emit({"kind": "status", "text": "「" + m["name"] + "」正在回复"})
                 fresh = not m.get("sid")
                 run_m = dict(m)
                 # 群级 effort 对本群所有成员统一；空=跟 CLI 默认。老群成员建群时冻结的
                 # 成员级 effort 不再单独生效，否则状态栏显示「默认」实际却按旧值跑
-                eff = g_now.get("effort") or ""
+                eff = (p_now or g_now).get("effort") or ""
                 run_m["effort"] = eff if eff in EFFORTS else ""
                 r = self._run_member(
-                    run_m, self._member_prompt(g_now, m, images, fresh), rid)
+                    run_m, self._member_prompt(g_now, m, images, fresh, parent=p_now), rid)
                 if r["rc"] != 0 and not r["text"] and not r["stopped"] and not fresh:
                     # 旧会话链接不上：重开一条，把全量转录补给它，重试一次
                     m["sid"] = ""
@@ -2500,7 +2720,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._emit({"kind": "note",
                                 "text": "「" + m["name"] + "」的会话接不上了，已重开并补发群记录"})
                     r = self._run_member(
-                        run_m, self._member_prompt(g_now, m, images, True), rid)
+                        run_m, self._member_prompt(g_now, m, images, True, parent=p_now), rid)
                 if r["rc"] != 0 and not r["text"] and not r["stopped"]:
                     etxt = ("「" + m["name"] + "」响应失败：" +
                             (r["err"] or ("claude退出码 %s" % r["rc"])))
@@ -2517,6 +2737,7 @@ class Handler(BaseHTTPRequestHandler):
                 with SESS_LOCK:
                     d = load_sessions()
                     g = get_session(d, gkey)
+                    pg = get_session(d, room["parent"]) if room else None
                     if g:
                         for mm in g.get("members", []):
                             same = (mm.get("mid") == m.get("mid")) if m.get("mid") \
@@ -2525,6 +2746,14 @@ class Handler(BaseHTTPRequestHandler):
                                 continue
                             if r["sid"]:
                                 mm["sid"] = r["sid"]
+                                if pg:   # 讨论室：会话链的真身在大厅群里
+                                    for px in pg.get("members", []):
+                                        if px.get("mid") == mm.get("mid"):
+                                            px["sid"] = r["sid"]
+                            if m.get("_room_intro_due") and ok:
+                                mm["room_intro"] = True
+                            if m.get("_back_done") and ok:
+                                mm.pop("back_from", None)
                             _, before = read_group_msgs(gkey, 0)
                             for tk in r.get("thinks") or []:
                                 append_group_msg(gkey, "member", mm["name"],
@@ -2539,7 +2768,7 @@ class Handler(BaseHTTPRequestHandler):
                                 # 它生成期间若有人从界面写了公告/改名通知（落在它读过的
                                 # 之后、它自己发言之前），指针停在那些通知前，下轮补看
                                 mm["read"] = tot if (seen is None or before <= seen) else seen
-                                mm["intro_v"] = 2   # 已经知道群名/公告/改名规则
+                                mm["intro_v"] = INTRO_V   # 已经知道群规则（含接茬/分组讨论）
                             if new_name is not None and new_name == mm["name"]:
                                 new_name = None   # 改成自己现在的名字：不算改名，不发通知
                             if new_name is not None:
@@ -2551,6 +2780,10 @@ class Handler(BaseHTTPRequestHandler):
                                     notes.append("「%s」改名为「%s」" % (mm["name"], new_name))
                                     mm["name"] = new_name
                                     m["name"] = new_name
+                                    if pg:   # 室内改名，大厅真身同步
+                                        for px in pg.get("members", []):
+                                            if px.get("mid") == mm.get("mid"):
+                                                px["name"] = new_name
                             if new_notice is not None:
                                 if (g.get("owner") or "user") == mm.get("mid"):
                                     g["notice"] = new_notice[:500]
@@ -2569,11 +2802,12 @@ class Handler(BaseHTTPRequestHandler):
                     self._emit({"kind": "note", "text": nt})
                 if r["text"]:
                     last_reply = r["text"]
+                    replies.append((dict(m), r["text"]))
                     bad_stk = unresolved_stickers(r["text"])
                     if bad_stk:
                         STK_WARN[gkey + "/" + (m.get("mid") or m["name"])] = bad_stk
                 if r["stopped"]:
-                    gnote = "已停止，后面的成员不再发言" if len(targets) > 1 else "已停止"
+                    gnote = "已停止，后面的成员不再发言" if (len(targets) > 1 or queue) else "已停止"
                     append_group_msg(gkey, "system", "系统", gnote)
                     self._emit({"kind": "note", "text": gnote})
                     break
