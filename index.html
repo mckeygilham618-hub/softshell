@@ -273,35 +273,8 @@
     background: #f7f7f7; border-top: 1px solid #ddd; padding: 8px;
     display: flex; gap: 6px; flex: none; align-items: flex-end;
   }
-  #callbtn.oncall { background: #ffecec; border-color: #ff8a80; }
-  #calloverlay {
-    position: fixed; inset: 0; z-index: 200; display: none;
-    flex-direction: column; align-items: center; justify-content: center;
-    gap: 14px; color: #eef3ee; text-align: center;
-    background: linear-gradient(160deg, #22312a 0%, #17211b 60%, #101712 100%);
-  }
-  #calloverlay.open { display: flex; }
-  #cavatar {
-    width: 108px; height: 108px; border-radius: 14px; overflow: hidden;
-    background: #fff; box-shadow: 0 8px 30px rgba(0,0,0,.4);
-  }
-  #cavatar img { width: 100%; height: 100%; object-fit: cover; }
-  #cname { font-size: 20px; font-weight: 600; }
-  #cstatus { font-size: 14px; color: #9fd4ae; min-height: 20px; }
-  #ctimer { font-size: 13px; color: #7f938a; }
-  #cheard { font-size: 14px; color: #a6e3b8; max-width: 78vw; min-height: 20px; }
-  #csub {
-    font-size: 14px; line-height: 1.7; color: #cfd9d2; max-width: 78vw;
-    max-height: 26vh; overflow-y: auto; text-align: left; white-space: pre-wrap;
-  }
-  #hangup {
-    margin-top: 18px; width: 64px; height: 64px; border-radius: 50%;
-    border: 0; background: #e64340; color: #fff; font-size: 26px;
-    cursor: pointer; box-shadow: 0 6px 20px rgba(230,67,64,.4);
-  }
-  #hangup:hover { background: #f25350; }
-  #chint { font-size: 12px; color: #66766d; margin-top: 6px; }
   #voicestate { float: left; margin-right: 10px; color: #07c160; }
+  #callbtn.oncall { background: #ffecec; border-color: #ff8a80; }
   #emobtn, #attach, #callbtn {
     background: none; border: 1px solid #ccc; border-radius: 6px; color: #555;
     font-size: 18px; padding: 8px 11px; cursor: pointer; flex: none;
@@ -396,16 +369,6 @@
   <div class="mi" data-g="myname"><span>改我的群昵称</span></div>
 </div>
 <div class="popmenu" id="atmenu" style="left:250px;right:auto;bottom:64px"></div>
-<div id="calloverlay">
-  <div id="cavatar"><img id="cavimg" style="display:none"></div>
-  <div id="cname">Claude</div>
-  <div id="cstatus">连接中…</div>
-  <div id="cheard"></div>
-  <div id="csub"></div>
-  <div id="ctimer">00:00</div>
-  <button id="hangup" title="挂断">📵</button>
-  <div id="chint">开口即说 · 它讲话时你说一句它就闭嘴听你的</div>
-</div>
 <div id="spanel">
   <div class="srow"><input type="text" id="sq" placeholder="搜索本会话的聊天记录"><button id="sclose">×</button></div>
   <div id="stabs">
@@ -427,7 +390,7 @@
 <footer>
   <button id="emobtn" title="表情和表情包">😀</button>
   <button id="attach" title="发图片（也可以直接Ctrl+V粘贴截图）">📎</button>
-  <button id="callbtn" title="语音通话（对讲机式：说完停0.8秒自动发送，回复自动朗读）">📞</button>
+  <button id="callbtn" title="对讲机模式：点一下开麦，说完自动发送；回复念完自动再开麦；念的时候你一开口它就停">📞</button>
   <input id="file" type="file" accept="image/*" multiple style="display:none">
   <textarea id="input" placeholder="说话（Enter换行，Ctrl+Enter发送，Ctrl+V可贴图）"></textarea>
   <button id="send">发送</button>
@@ -453,20 +416,9 @@
   </div>
 </div>
 <div class="popmenu" id="voicemenu">
-  <div class="mtitle">朗读嗓音 · 绑定当前会话（点击即试听）</div>
-  <div class="mi" data-voice="local-female"><span>本地女声</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="zh-HK-HiuMaanNeural"><span>曉曼 · 粤语女声</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="local-male"><span>本地男声</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="zh-HK-WanLungNeural"><span>雲龍 · 粤语男声</span><span class="chk">✓</span></div>
-  <div class="mtitle">多语种（联网）</div>
-  <div class="mi" data-voice="en-US-AriaNeural"><span>Aria · 美音女声</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="en-US-AndrewNeural"><span>Andrew · 美音男声</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="en-GB-SoniaNeural"><span>Sonia · 英音女声</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="en-GB-RyanNeural"><span>Ryan · 英音男声</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="ja-JP-NanamiNeural"><span>七海 · 日语女声</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="ja-JP-KeitaNeural"><span>圭太 · 日语男声</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="ko-KR-SunHiNeural"><span>善熙 · 韩语女声</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="ko-KR-InJoonNeural"><span>仁俊 · 韩语男声</span><span class="chk">✓</span></div>
+  <div class="mtitle">朗读嗓音 · 全局生效（点击即试听）</div>
+  <div class="mi" data-voice="local-female"><span>本地女声（慧慧）</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="local-male"><span>本地男声（康康）</span><span class="chk">✓</span></div>
   <div class="mtitle">语速</div>
   <div class="mi" data-rate="+0%"><span>正常</span><span class="chk">✓</span></div>
   <div class="mi" data-rate="+30%"><span>舒适（默认）</span><span class="chk">✓</span></div>
@@ -495,7 +447,6 @@
   var gridEl = document.getElementById('grid');
   var emobtn = document.getElementById('emobtn');
   var busy = false;
-  var CALL = { on: false, timer: null, reply: [] };   // 语音通话状态
   var curRid = null;      // 本次请求的id，停止时告诉后端杀哪个
   var curAbort = null;    // 中断前端的流式读取
   var pending = [];
@@ -729,7 +680,6 @@
     var who = m ? '「' + m.name + '」' : '';
     if (ev.kind === 'text') {
       botSay(ev.text, m);
-      if (CALL.on) CALL.reply.push(ev.text);
       setStatus(who + '继续输出中');
     }
     else if (ev.kind === 'thinking') {
@@ -920,6 +870,7 @@
   }
   function switchConv(key) {
     if (key === SKEY || busy) return;   // 运行中不切，免得流串到别的窗口
+    if (WK.on) endWalkie();             // 对讲机跟着会话走，切走就挂断
     closeSearch();   // 搜索结果是上一个会话的快照，跨会话点击会串号
     closeDlg();      // 公告/成员名单弹窗也是上一个会话的
     closeMenus();
@@ -1597,18 +1548,21 @@
     return r;
   }
   function curVoiceId() {
-    var v = (LOOK && LOOK.tts) || '';
-    if (!v) { try { v = localStorage.getItem('ttsVoice2') || ''; } catch (e) {} }
-    return v || 'local-female';
+    // 嗓音是全局选项（存浏览器本地），不再绑定会话；旧版存过的在线嗓音id一律回落女声
+    var v = '';
+    try { v = localStorage.getItem('ttsVoice2') || ''; } catch (e) {}
+    return v === 'local-male' ? 'local-male' : 'local-female';
   }
   function pickVoice(vid) {
+    // 只挑真正装在本机的嗓音（localService）。Edge 里的"Online (Natural)"在线嗓音
+    // 会静默哑火（不出声、不报错），必须排除
     var vs = speechSynthesis.getVoices().filter(function (v) {
-      return /^zh/i.test(v.lang);
+      return /^zh/i.test(v.lang) && v.localService && !/Online|Natural/i.test(v.name);
     });
     if (!vs.length) return null;
     var wants = vid === 'local-male'
-      ? ['Yunxi', '云希', 'Yunyang', '云扬', 'Yunjian', 'Kangkang']
-      : ['Xiaoxiao', '晓晓', 'Xiaoyi', '晓伊', 'Huihui', 'Yaoyao'];
+      ? ['Kangkang', '康康']
+      : ['Huihui', '慧慧', 'Yaoyao', '瑶瑶'];
     for (var i = 0; i < wants.length; i++) {
       for (var j = 0; j < vs.length; j++) {
         if (vs[j].name.indexOf(wants[i]) >= 0) return vs[j];
@@ -1624,220 +1578,240 @@
     t = t.replace(/[*#>`|~_]{1,}/g, '');
     return t;
   }
+  /* ── 对讲机模式：点📞开麦 → 你说完自动闭麦、发送 → Claude回复逐句念 → 念完自动开麦。
+        念的时候麦克风也开着：识别到你的声音就立刻停念，直接进入听你说。
+        闭麦是逻辑闭麦：麦克风通道常开（缩小窗口不会被浏览器节流），只是不收结果。
+        朗读由桥接合成、浏览器播放，这样浏览器的回声消除才能减掉它自己的声音 ── */
   var callbtn = document.getElementById('callbtn');
-  var CALL2 = { on: false, ac: null, node: null, stream: null,
-                evT: null, spT: null, tmT: null, t0: 0,
-                turn: 0, queue: [], playing: false, cur: null,
-                sentAt: 0, turnAudio: false, fillers: [],
-                fillerActive: null, fillerPlayedTurn: -1, wd: null };
-  // 垫音词：学GPT——等待间隙先应一声，盖住模型首token的空白
-  var FILLER_TEXTS = ['嗯……', '我想想哈。', '稍等哈。'];
-  function prefetchFillers() {
-    CALL2.fillers = [];
-    var vid = curVoiceId();
-    if (vid.indexOf('local-') === 0) return;   // 本地嗓音现念不用备货
-    FILLER_TEXTS.forEach(function (tx) {
-      fetch('/tts', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: tx, voice: vid, rate: curRate() })
-      }).then(function (r) { return r.ok ? r.blob() : null; })
-        .then(function (b) { if (b) CALL2.fillers.push(URL.createObjectURL(b)); })
-        .catch(function () {});
+  var voicestate = document.getElementById('voicestate');
+  var WK = { on: false, mode: '', ac: null, node: null, stream: null,
+             spT: null, evT: null, turn: 0, queue: [], playing: false, cur: null,
+             seq: 0, sentAt: 0, turnAudio: false, turnDone: true, interrupted: -1,
+             fillerPlayedTurn: -1, wd: null, typing: null, live: null,
+             pending: '', pendingT: 0, gateT: 0 };
+  var FILLER_TEXTS = ['嗯……', '我想想哈。', '稍等哈。'];   // 等待间隙先应一声，不进记录
+  function wkState(mode) {
+    WK.mode = mode;
+    voicestate.textContent = mode === 'listen' ? '🎙 在听'
+      : mode === 'muted' ? '🔇 在想' : mode === 'speak' ? '🔊 在念' : '';
+  }
+  function rateNum() { return 1 + (parseInt(curRate(), 10) || 0) / 100; }
+
+  // 播一句：桥接合成（康康/慧慧）→ 音频元素播放；合成不可用时退回浏览器嗓音
+  function playSentence(text, done) {
+    var my = ++WK.seq;
+    var fired = false;
+    var fin = function () { if (!fired) { fired = true; done(); } };
+    fetch('/speak', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text, voice: curVoiceId(), rate: rateNum() })
+    }).then(function (r) {
+      if (!r.ok) throw new Error('speak ' + r.status);
+      return r.blob();
+    }).then(function (b) {
+      if (my !== WK.seq) { fin(); return; }   // 等音频的工夫已经被打断/停掉了
+      var a = new Audio(URL.createObjectURL(b));
+      WK.cur = a;
+      a.onended = a.onerror = fin;
+      a.play().catch(fin);
+    }).catch(function () {
+      if (my !== WK.seq) { fin(); return; }
+      speakLocal(text, curVoiceId(), fin);
     });
   }
-  function stopFiller() {
-    if (CALL2.fillerActive) {
-      try { CALL2.fillerActive.pause(); } catch (e) {}
-      CALL2.fillerActive = null;
-    }
+  function stopPlayback() {
+    WK.seq++;
+    WK.queue = [];
+    WK.playing = false;
+    if (WK.cur) { try { WK.cur.pause(); } catch (e) {} WK.cur = null; }
+    try { speechSynthesis.cancel(); } catch (e) {}
+    if (WK.wd) { clearTimeout(WK.wd); WK.wd = null; }
   }
   function playFiller() {
-    if (CALL2.playing || CALL2.queue.length) return;
-    CALL2.fillerPlayedTurn = CALL2.turn;
-    if (CALL2.fillers.length) {
-      CALL2.fillerActive = new Audio(
-        CALL2.fillers[Math.floor(Math.random() * CALL2.fillers.length)]);
-      CALL2.fillerActive.play().catch(function () {});
-    } else {
-      var vid = curVoiceId();
-      speakLocal(FILLER_TEXTS[0],
-                 vid === 'local-male' ? 'local-male' : 'local-female',
+    if (WK.playing || WK.queue.length) return;
+    WK.fillerPlayedTurn = WK.turn;
+    playSentence(FILLER_TEXTS[Math.floor(Math.random() * FILLER_TEXTS.length)],
                  function () {});
-    }
   }
-
-  var callStatBase = '', callStatT0 = 0;
-  function setCallStatus(s) {
-    callStatBase = s;
-    callStatT0 = Date.now();
-    paintCallStatus();
-  }
-  function paintCallStatus() {
-    var sec = Math.floor((Date.now() - callStatT0) / 1000);
-    document.getElementById('cstatus').textContent =
-      callStatBase + (sec >= 3 ? '（' + sec + 's）' : '');
-  }
-  function showOverlay() {
-    var cur = SESSIONS.filter(function (x) { return x.key === SKEY; })[0];
-    document.getElementById('cname').textContent = (cur && cur.name) || 'Claude';
-    var img = document.getElementById('cavimg');
-    if (LOOK.avatar_claude) {
-      img.src = stickerUrl(LOOK.avatar_claude);
-      img.style.display = 'block';
-    } else { img.style.display = 'none'; }
-    CALL2.t0 = Date.now();
-    var tm = document.getElementById('ctimer');
-    CALL2.tmT = setInterval(function () {
-      var s = Math.floor((Date.now() - CALL2.t0) / 1000);
-      tm.textContent = ('0' + Math.floor(s / 60)).slice(-2) + ':' + ('0' + s % 60).slice(-2);
-      paintCallStatus();   // 状态计时一起走：卡在哪一步、卡了几秒，一目了然
-    }, 1000);
-    document.getElementById('cheard').textContent = '';
-    document.getElementById('csub').textContent = '';
-    document.getElementById('calloverlay').classList.add('open');
-  }
-  function hideOverlay() {
-    if (CALL2.tmT) clearInterval(CALL2.tmT);
-    document.getElementById('calloverlay').classList.remove('open');
-  }
-
-  function stopCallAudio() {
-    CALL2.queue = [];
-    CALL2.playing = false;
-    if (CALL2.cur) { try { CALL2.cur.pause(); } catch (e) {} CALL2.cur = null; }
-    try { speechSynthesis.cancel(); } catch (e) {}
-  }
-
-  function playNextSentence() {
-    if (!CALL2.on || CALL2.playing || !CALL2.queue.length) return;
-    stopFiller();
-    CALL2.playing = true;
-    CALL2.turnAudio = true;
-    setCallStatus('正在开嗓');   // 取语音要一两秒，声音真响了才叫"在说"
-    var sent = CALL2.queue.shift();
+  function playNext() {
+    if (!WK.on || WK.playing || !WK.queue.length) return;
+    if (WK.cur) { try { WK.cur.pause(); } catch (e) {} WK.cur = null; }   // 掐掉垫音词
+    WK.playing = true;
+    WK.turnAudio = true;
+    wkState('speak');
+    var sent = WK.queue.shift();
     var fired = false;
     var next = function () {
       if (fired) return;
       fired = true;
-      if (CALL2.wd) { clearTimeout(CALL2.wd); CALL2.wd = null; }
-      CALL2.playing = false;
-      CALL2.cur = null;
-      if (CALL2.queue.length) playNextSentence();
-      else if (CALL2.on) setCallStatus('在听');
+      if (WK.wd) { clearTimeout(WK.wd); WK.wd = null; }
+      WK.playing = false;
+      WK.cur = null;
+      if (WK.queue.length) playNext();
+      else afterSpeech();
     };
     // 哑火看门狗：音频既不响也不报错时，按句长限时强制翻页
-    CALL2.wd = setTimeout(next, 5000 + sent.length * 350);
-    var vid = curVoiceId();
+    WK.wd = setTimeout(next, 5000 + sent.length * 350);
     var clean = ttsClean(sent);
     if (!clean.trim()) { next(); return; }
-    if (vid.indexOf('local-') === 0) {
-      setCallStatus('在说');
-      speakLocal(clean, vid, next);
-      return;
-    }
-    fetch('/tts', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: clean.slice(0, 600), voice: vid, rate: curRate() })
-    }).then(function (r) {
-      if (!r.ok) throw new Error('tts');
-      return r.blob();
-    }).then(function (b) {
-      if (!CALL2.on) { next(); return; }
-      CALL2.cur = new Audio(URL.createObjectURL(b));
-      CALL2.cur.onended = CALL2.cur.onerror = next;
-      CALL2.cur.play().then(function () { setCallStatus('在说'); }).catch(next);
-    }).catch(function () { setCallStatus('在说'); speakLocal(clean, 'local-female', next); });
+    playSentence(clean, next);
+  }
+  // 念完（或被打断）：本轮已收尾就开麦，否则先等 turn_end
+  function afterSpeech() {
+    if (!WK.on) return;
+    if (WK.turnDone) openMic(); else wkState('muted');
+  }
+  function openMic() {
+    WK.gateT = Date.now() + 300;   // 留 0.3 秒让扬声器余音散掉，期间的识别结果不要
+    WK.pending = '';
+    WK.pendingT = 0;
+    wkState('listen');
   }
 
-  var pendingSpeech = '', pendingT = 0;
+  async function walkieSend(msg) {
+    wkState('muted');
+    var r;
+    try {
+      r = await (await fetch('/call/say', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: msg, voice: curVoiceId() })
+      })).json();
+    } catch (e) { r = null; }
+    if (!(r && r.turn)) { chip('这句没发出去，再说一遍'); openMic(); return; }
+    WK.turn = r.turn;
+    WK.sentAt = Date.now();
+    WK.turnAudio = false;
+    WK.turnDone = false;
+    WK.interrupted = -1;
+    roundStats = { tin: 0, tout: 0, cr: 0, ms: 0, cut: false };
+    setBusy(true);
+    bubble('user', md(msg));
+    WK.live = null;
+    WK.typing = bubble('bot', '<span class="dots"></span>');
+    startStatus(WK.typing.querySelector('.dots'));
+  }
+
   async function pumpUserSpeech() {
-    if (!CALL2.on) return;
+    if (!WK.on) return;
     try {
       var j = await (await fetch('/voice/poll')).json();
-      if (j.err) { chip('语音故障：' + esc(j.err)); endCall2(); return; }
-      if (j.text) {
-        // 噪音防线：它正说着话时，一两个字的碎音不当打断
-        if ((CALL2.playing || CALL2.queue.length) &&
-            j.text.replace(/[，。！？!?、\s]/g, '').length < 2) return;
-        stopCallAudio();          // 打断：你开口，它闭嘴
-        pendingSpeech += (pendingSpeech ? ' ' : '') + j.text;
-        pendingT = Date.now();
-        document.getElementById('cheard').textContent = '你说：' + pendingSpeech;
-        setCallStatus('在听你说…');
+      if (j.err) { chip('语音故障：' + esc(j.err)); endWalkie(); return; }
+      var text = (j.text || '').trim();
+      if (WK.mode === 'muted') return;          // 逻辑闭麦：收到也不要
+      if (WK.mode === 'speak') {
+        if (!text) return;
+        // 噪音防线：一两个字的碎音不当打断（咳嗽、敲键盘、残余回声）
+        if (text.replace(/[，。！？!?、\s]/g, '').length < 2) return;
+        stopPlayback();                          // 你开口，它闭嘴，当作已经念完
+        WK.interrupted = WK.turn;                // 这轮剩下的句子只显示不念
+        openMic();
+        WK.gateT = 0;                            // 这句就是你新发言的开头，不能丢
+        WK.pending = text;
+        WK.pendingT = Date.now();
+        voicestate.textContent = '🎙 在听：' + text.slice(-20);
         return;
       }
-      if (!pendingSpeech) return;
-      // 凑句宽限：停顿≠说完。句尾有标点少等点，没标点多等点，期间接着说会拼起来
-      var grace = /[。！？!?]\s*$/.test(pendingSpeech) ? 900 : 1800;
-      if (Date.now() - pendingT < grace) return;
-      var msg = pendingSpeech;
-      pendingSpeech = '';
-      setCallStatus('发送中');
-      var r = await (await fetch('/call/say', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: msg })
-      })).json();
-      if (r && r.turn) {
-        CALL2.turn = r.turn;
-        CALL2.sentAt = Date.now();
-        CALL2.turnAudio = false;
-        document.getElementById('csub').textContent = '';   // 新一轮，字幕清屏
+      if (WK.mode !== 'listen') return;
+      if (text) {
+        if (Date.now() < WK.gateT) return;       // 开麦前的余音
+        WK.pending += (WK.pending ? ' ' : '') + text;
+        WK.pendingT = Date.now();
+        voicestate.textContent = '🎙 在听：' + WK.pending.slice(-20);
+        return;
       }
+      if (!WK.pending) return;
+      // 凑句宽限：停顿≠说完。句尾有标点少等点，没标点多等点，期间接着说会拼起来
+      var grace = /[。！？!?]\s*$/.test(WK.pending) ? 900 : 1800;
+      if (Date.now() - WK.pendingT < grace) return;
+      if (!WK.turnDone) return;                  // 上一轮还没收尾（被打断后）：等它结束再发
+      var msg = WK.pending;
+      WK.pending = '';
+      await walkieSend(msg);
     } catch (e) {}
   }
 
+  function finishTurn(ev) {
+    WK.turnDone = true;
+    WK.sentAt = 0;
+    stopStatus();
+    if (WK.typing) { WK.typing.remove(); WK.typing = null; }
+    WK.live = null;
+    if (ev.tout || ev.ms) {
+      document.getElementById('laststats').textContent =
+        '上轮 ↑' + fmtTok(ev.tin || 0) +
+        (ev.cr ? '（缓存' + fmtTok(ev.cr) + '）' : '') +
+        ' ↓' + fmtTok(ev.tout || 0) + ' · ' + Math.round((ev.ms || 0) / 1000) + 's';
+    }
+    setBusy(false);
+    loadLook();
+    loadSessions().then(applyPrefs);
+    updateWordCount();
+    updateThinkState();
+    if (!WK.queue.length && !WK.playing) {
+      if (WK.mode === 'listen') return;          // 被打断后已经在听了
+      openMic();
+    }
+  }
+  function keepTypingLast() {
+    if (WK.typing) chat.appendChild(WK.typing);
+    chat.scrollTop = chat.scrollHeight;
+  }
+
   async function pumpEvents() {
-    if (!CALL2.on) return;
-    // 等太久还没出声：放一句垫音词稳住场（每轮最多一次）
-    if (CALL2.sentAt && !CALL2.turnAudio && !CALL2.playing &&
-        CALL2.fillerPlayedTurn !== CALL2.turn &&
-        Date.now() - CALL2.sentAt > 2500) playFiller();
+    if (!WK.on) return;
+    // 等太久还没出声：放一句垫音词稳住场（每轮最多一次；此时闭麦，不会录回去）
+    if (WK.mode === 'muted' && WK.sentAt && !WK.turnAudio && !WK.playing &&
+        WK.fillerPlayedTurn !== WK.turn && Date.now() - WK.sentAt > 2500) playFiller();
     try {
       var j = await (await fetch('/call/events')).json();
       (j.events || []).forEach(function (ev) {
         if (ev.kind === 'say') {
-          if (ev.turn >= CALL2.turn) {   // >=容忍轮次号竞态，只丢真正过期的
-            CALL2.turn = ev.turn;
-            // 字幕先上屏：就算之后被你打断没念完，说了什么也看得见
-            var cs = document.getElementById('csub');
-            cs.textContent += (cs.textContent ? '\n' : '') + ev.text;
-            cs.scrollTop = cs.scrollHeight;
-            CALL2.queue.push(ev.text);
-            playNextSentence();
-          }
+          if (ev.turn < WK.turn) return;         // 过期轮次
+          WK.turn = ev.turn;                     // >=容忍轮次号竞态
+          // 句子先上屏（流式气泡）：就算之后被你打断没念完，说了什么也看得见
+          if (!WK.live) WK.live = bubble('bot', '');
+          WK.live.querySelector('.bubble').textContent += ev.text;
+          keepTypingLast();
+          if (WK.interrupted === ev.turn) return;   // 被打断的轮次：只显示不念
+          WK.queue.push(ev.text);
+          playNext();
+        } else if (ev.kind === 'text') {
+          // 整段到齐：换成正式排版的气泡（表情包、粗体等按文字聊天的规则显示）
+          if (WK.live) { WK.live.remove(); WK.live = null; }
+          botSay(ev.text);
+          keepTypingLast();
+          setStatus('继续输出中');
+        } else if (ev.kind === 'thinking' || ev.kind === 'tool') {
+          handle(ev);
+          keepTypingLast();
         } else if (ev.kind === 'status') {
-          if (ev.turn === CALL2.turn && !CALL2.playing) setCallStatus(ev.text);
+          if (ev.turn === WK.turn && WK.mode !== 'speak') setStatus(ev.text);
         } else if (ev.kind === 'turn_end') {
-          if (ev.tout || ev.ms) {
-            document.getElementById('laststats').textContent =
-              '上轮 ↑' + fmtTok(ev.tin || 0) + ' ↓' + fmtTok(ev.tout || 0) +
-              ' · ' + Math.round((ev.ms || 0) / 1000) + 's';
-          }
-          if (ev.turn === CALL2.turn && !CALL2.queue.length && !CALL2.playing) {
-            setCallStatus('在听');
-          }
+          if (ev.err) bubble('bot', '<span class="err">' + md(ev.err) + '</span>');
+          finishTurn(ev);
         } else if (ev.kind === 'call_dead') {
           chip('通话进程退出了');
-          endCall2();
+          endWalkie();
         }
       });
     } catch (e) {}
   }
 
-  async function startCall2() {
+  async function startWalkie() {
+    if (busy) return;
     var st;
     try {
       st = await (await fetch('/call/start', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: SKEY })
       })).json();
-    } catch (e) { chip('通话没起来：桥接没响应'); return; }
+    } catch (e) { chip('对讲机没起来：桥接没响应'); return; }
     if (!st.ok) {
-      chip('通话没起来：' + ((st.missing || []).map(esc).join('；') || esc(st.err || '')));
+      chip('对讲机没起来：' + ((st.missing || []).map(esc).join('；') || esc(st.err || '')));
       return;
     }
     try {
-      CALL2.stream = await navigator.mediaDevices.getUserMedia({ audio: {
+      WK.stream = await navigator.mediaDevices.getUserMedia({ audio: {
         echoCancellation: true, noiseSuppression: true,
         autoGainControl: true, channelCount: 1 } });
     } catch (e) {
@@ -1845,12 +1819,13 @@
       fetch('/call/stop', { method: 'POST' }).catch(function () {});
       return;
     }
-    CALL2.ac = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-    var src = CALL2.ac.createMediaStreamSource(CALL2.stream);
-    CALL2.node = CALL2.ac.createScriptProcessor(4096, 1, 1);
+    WK.ac = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    var src = WK.ac.createMediaStreamSource(WK.stream);
+    WK.node = WK.ac.createScriptProcessor(4096, 1, 1);
     var feeding = false;
-    CALL2.node.onaudioprocess = function (ev2) {
-      if (!CALL2.on || feeding) return;
+    WK.node.onaudioprocess = function (ev2) {
+      // 通道常开、一直送：识别引擎的断句状态才连续；闭麦期间由前端丢弃结果
+      if (!WK.on || feeding) return;
       var f = ev2.inputBuffer.getChannelData(0);
       var i16 = new Int16Array(f.length);
       for (var i = 0; i < f.length; i++) {
@@ -1862,65 +1837,68 @@
         .catch(function () {})
         .then(function () { feeding = false; });
     };
-    src.connect(CALL2.node);
-    CALL2.node.connect(CALL2.ac.destination);
-    CALL2.on = true;
-    CALL2.turn = 0;
-    CALL2.queue = [];
-    CALL2.sentAt = 0;
-    CALL2.turnAudio = false;
-    CALL2.fillerPlayedTurn = -1;
-    prefetchFillers();   // 备好"嗯……"垫音词，等待间隙先应一声
+    src.connect(WK.node);
+    WK.node.connect(WK.ac.destination);
+    WK.on = true;
+    WK.turn = 0;
+    WK.queue = [];
+    WK.sentAt = 0;
+    WK.turnAudio = false;
+    WK.turnDone = true;
+    WK.interrupted = -1;
+    WK.fillerPlayedTurn = -1;
+    WK.typing = null;
+    WK.live = null;
     callbtn.classList.add('oncall');
-    showOverlay();
-    setCallStatus('在听');
-    CALL2.spT = setInterval(pumpUserSpeech, 300);
-    CALL2.evT = setInterval(pumpEvents, 300);
+    chip('🎙 对讲机开了：直接说，说完停一下就发出去；再点📞关掉');
+    openMic();
+    WK.spT = setInterval(pumpUserSpeech, 300);
+    WK.evT = setInterval(pumpEvents, 300);
   }
 
-  function endCall2() {
-    if (!CALL2.on && !document.getElementById('calloverlay').classList.contains('open')) return;
-    CALL2.on = false;
-    pendingSpeech = '';
-    CALL2.sentAt = 0;
-    stopFiller();
-    if (CALL2.wd) { clearTimeout(CALL2.wd); CALL2.wd = null; }
-    if (CALL2.spT) clearInterval(CALL2.spT);
-    if (CALL2.evT) clearInterval(CALL2.evT);
-    stopCallAudio();
-    try { CALL2.node && CALL2.node.disconnect(); } catch (e) {}
-    try { CALL2.ac && CALL2.ac.close(); } catch (e) {}
+  function endWalkie() {
+    if (!WK.on) return;
+    WK.on = false;
+    WK.pending = '';
+    WK.sentAt = 0;
+    if (WK.spT) clearInterval(WK.spT);
+    if (WK.evT) clearInterval(WK.evT);
+    stopPlayback();
+    stopStatus();
+    if (WK.typing) { WK.typing.remove(); WK.typing = null; }
+    WK.live = null;
+    if (!WK.turnDone) { WK.turnDone = true; setBusy(false); }
+    try { WK.node && WK.node.disconnect(); } catch (e) {}
+    try { WK.ac && WK.ac.close(); } catch (e) {}
     try {
-      if (CALL2.stream) CALL2.stream.getTracks().forEach(function (tr) { tr.stop(); });
+      if (WK.stream) WK.stream.getTracks().forEach(function (tr) { tr.stop(); });
     } catch (e) {}
     fetch('/call/stop', { method: 'POST' }).catch(function () {});
     callbtn.classList.remove('oncall');
-    hideOverlay();
-    delete chatCache[SKEY];       // 通话内容以文字气泡回放进聊天窗
+    wkState('');
+    delete chatCache[SKEY];       // 从档案整体回放一遍，和文字聊天的显示完全对齐
     renderHistory(SKEY);
     updateWordCount();
     loadSessions();
   }
   callbtn.addEventListener('click', function () {
-    if (CALL2.on) endCall2(); else startCall2();
+    if (WK.on) endWalkie(); else startWalkie();
   });
-  document.getElementById('hangup').addEventListener('click', endCall2);
-
-  /* 试听用的本地/在线播报（嗓音菜单） */
+  /* 本机嗓音播报（试听用；通话走同一条 playSentence） */
   var ttsBusy = false;
-  var ttsAudio = null;
   function stopSpeak() {
-    try { speechSynthesis.cancel(); } catch (e) {}
-    if (ttsAudio) { try { ttsAudio.pause(); } catch (e) {} ttsAudio = null; }
+    if (WK.on) return;           // 对讲机开着时别误伤它正在念的话
+    stopPlayback();
     ttsBusy = false;
   }
   function speakLocal(clean, vid, done) {
+    // 浏览器自带嗓音：只作桥接合成不可用时的退路（它的声音消不掉回声）
     try {
       var u = new SpeechSynthesisUtterance(clean);
       var v = pickVoice(vid);
       if (v) u.voice = v;
       u.lang = 'zh-CN';
-      u.rate = 1 + (parseInt(curRate(), 10) || 0) / 100;
+      u.rate = rateNum();
       var fired = false;
       u.onend = u.onerror = function () { if (!fired) { fired = true; done(); } };
       speechSynthesis.cancel();
@@ -1933,28 +1911,8 @@
   function speak(text, onend) {
     var clean = ttsClean(text);
     if (!clean.trim()) { if (onend) onend(); return; }
-    var vid = curVoiceId();
     ttsBusy = true;
-    var fired = false;
-    var done = function () {
-      if (fired) return;
-      fired = true;
-      ttsBusy = false;
-      if (onend) onend();
-    };
-    if (vid.indexOf('local-') === 0) { speakLocal(clean, vid, done); return; }
-    fetch('/tts', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: clean.slice(0, 600), voice: vid, rate: curRate() })
-    }).then(function (r) {
-      if (!r.ok) throw new Error('tts ' + r.status);
-      return r.blob();
-    }).then(function (b) {
-      if (ttsAudio) { try { ttsAudio.pause(); } catch (e) {} }
-      ttsAudio = new Audio(URL.createObjectURL(b));
-      ttsAudio.onended = ttsAudio.onerror = done;
-      ttsAudio.play().catch(done);
-    }).catch(function () { speakLocal(clean, 'local-female', done); });
+    playSentence(clean, function () { ttsBusy = false; if (onend) onend(); });
   }
 
   /* 嗓音选择（点击即试听） */
@@ -1990,18 +1948,10 @@
     }
     if (mi.dataset.voice === undefined) return;
     var vid = mi.dataset.voice;
-    LOOK.tts = vid;                       // 立即生效
-    try { localStorage.setItem('ttsVoice2', vid); } catch (e2) {}   // 兼做新会话的全局默认
-    fetch('/prefs', {                     // 绑定到当前会话，跟着套装走
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key: SKEY, tts: vid })
-    }).catch(function () {});
+    try { localStorage.setItem('ttsVoice2', vid); } catch (e2) {}   // 全局生效，不绑会话
     paintVoiceMenu();
     stopSpeak();
-    speak(vid.indexOf('en-') === 0 ? 'Hi there, I will be the voice of this chat.'
-        : vid.indexOf('ja-') === 0 ? 'こんにちは、これからこの声でお話ししますね。'
-        : vid.indexOf('ko-') === 0 ? '안녕하세요, 앞으로 이 목소리로 말할게요.'
-        : '你好，我是软壳，以后我在这个会话里就用这个声音陪你说话。');
+    speak('你好，我是软壳，以后我就用这个声音陪你说话。');
   });
 
   /* ── 模型 / effort 切换 ── */
@@ -2247,7 +2197,7 @@
       var res = await fetch('/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: text, images: paths, stickers: stks, rid: curRid, skey: SKEY }),
+        body: JSON.stringify({ text: text, images: paths, stickers: stks, rid: curRid, skey: SKEY, voice: curVoiceId() }),
         signal: curAbort.signal
       });
       var reader = res.body.getReader();

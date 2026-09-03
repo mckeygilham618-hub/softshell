@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 import webbrowser
 import time
@@ -128,10 +129,34 @@ def look_state_line(skey):
 # 绝大多数轮次一个字不加。
 LAST_LOOK_SIG = {}
 
+# 朗读嗓音：只存在浏览器里，前端每条消息随身带 voice 字段；
+# 和外观一样，换过的那一轮追加一行回读，其余轮次不加。
+VOICE_NAMES = {"local-male": "男声「康康」", "local-female": "女声「慧慧」"}
+LAST_VOICE = {}
+
+
+def voice_id(v):
+    return "local-male" if v == "local-male" else "local-female"
+
+
+def voice_state_line(vid):
+    return "当前朗读嗓音：Windows 本机" + VOICE_NAMES[voice_id(vid)] + "。"
+
+
+def voice_change_text(skey, vid):
+    """嗓音和上次告诉过它的不同 → 一行回读；相同或首次（开场白已带）→ 空串。"""
+    vid = voice_id(vid)
+    prev = LAST_VOICE.get(skey)
+    LAST_VOICE[skey] = vid
+    if prev is None or prev == vid:
+        return ""
+    return "(用户把你的朗读嗓音换成了 Windows 本机" + VOICE_NAMES[vid] + "。)"
+
 
 # 每段新对话的第一条消息带上这段。不带的话，新会话里的Claude不知道自己能发表情包、
 # 换头像，也答不上用户关于软壳界面的提问。语气平实：介绍功能，不诱导动作。
-def intro_text(skey):
+def intro_text(skey, vid="local-female"):
+    LAST_VOICE[skey] = voice_id(vid)
     return (
         "(这是「Softshell 软壳」聊天窗口，你的输出按聊天软件方式显示：支持粗体、"
         "代码块、表格和列表，但更适合短句分段的聊天式表达。\n"
@@ -142,6 +167,13 @@ def intro_text(skey):
         "发图用📎按钮或Ctrl+V粘贴；状态栏右侧的模型/effort按钮可切换（下一条消息生效），"
         "状态栏左侧显示的是每轮token消耗（只是数字，不可点）；"
         "聊天记录自动留档在本地，重开窗口自动回放。\n"
+        "【语音对讲】标题栏📞是对讲机模式（可选件，装好识别模型才能用）：用户点一下开麦"
+        "直接说话，说完停顿自动发送并闭麦；你的回复会被逐句念出来，念完自动再开麦；"
+        "你念的时候用户一开口你就会被打断；再点📞关掉。对讲时没有单独页面，"
+        "双方的话都以普通气泡出现在聊天窗里。语音识别（SenseVoice）和朗读都在用户本机"
+        "离线完成。朗读嗓音只有两个 Windows 本机嗓音：女声「慧慧」和男声「康康」，"
+        "用户在状态栏「嗓音」里选（点击即试听，可调语速），全局生效；"
+        "嗓音换了会告诉你。" + voice_state_line(vid) + "\n"
         "【表情包】" + STICKER_DIR + " 文件夹里放着表情包，用到时再翻看即可。"
         "发送方式：写 [[表情:文件名]]（带不带后缀都认），单独占一行会显示成"
         "微信式的独立表情消息，夹在句中则嵌在文字里；只写你翻看后确认存在的文件名，"
@@ -590,7 +622,8 @@ CALLP = {"proc": None, "skey": "", "reader": None, "events": [],
          "turn": 0, "sid": None, "lock": threading.Lock()}
 SENT_SPLIT_RE = re.compile(r"[^。！？!?\n；;]*[。！？!?\n；;]+")
 CALL_HINT = (
-    "(语音通话模式：用户正在跟你打电话，你的回复会被逐句转成语音念出来。"
+    "(语音对讲模式：用户开了📞对讲机，正对着麦克风跟你说话，"
+    "你的回复会被本机嗓音逐句念出来。"
     "①开头先用一两个字的语气词接茬（嗯、好、哈、行这类），再说正文——"
     "第一句越短，用户越早听到你的声音；"
     "②全程口语短句，绝对不要换行、不要分段、不要markdown排版和列表，"
@@ -690,6 +723,63 @@ def voice_engine_up():
         return str(ex)[:300]
 
 
+# ── 本机朗读合成：常驻 PowerShell 工作进程（voice_tts.ps1），Windows OneCore 嗓音 ──
+# 为什么不让浏览器自己念（speechSynthesis）：那条路的声音是系统在浏览器外面放的，
+# 浏览器的回声消除拿不到参照，通话时麦克风会把它念的话录回去当成用户说的。
+# 改成桥接合成、浏览器播放，声音就是浏览器放的，回声消除才有参照。
+TTS_SCRIPT = os.path.join(DIR, "voice_tts.ps1")
+TTSW = {"proc": None, "lock": threading.Lock(), "voices": ""}
+
+
+def _tts_start():
+    if not os.path.isfile(TTS_SCRIPT) or os.name != "nt":
+        return None
+    try:
+        proc = subprocess.Popen(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+             "-File", TTS_SCRIPT],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, encoding="utf-8", creationflags=NO_WINDOW)
+        line = proc.stdout.readline().strip()
+        if not line.startswith("ready"):
+            kill_tree(proc)
+            return None
+        TTSW["voices"] = line[6:]
+        return proc
+    except OSError:
+        return None
+
+
+def tts_synth(text, voice, rate):
+    """合成一句 → wav 字节；失败返回 None（前端自动退回浏览器嗓音）。"""
+    with TTSW["lock"]:
+        proc = TTSW["proc"]
+        if proc is None or proc.poll() is not None:
+            proc = TTSW["proc"] = _tts_start()
+            if proc is None:
+                return None
+        out = os.path.join(tempfile.gettempdir(),
+                           "softshell_tts_%d.wav" % threading.get_ident())
+        try:
+            proc.stdin.write(json.dumps({"text": text, "voice": voice, "rate": rate,
+                                         "out": out}) + "\n")
+            proc.stdin.flush()
+            resp = proc.stdout.readline().strip()
+        except OSError:
+            kill_tree(proc)
+            TTSW["proc"] = None
+            return None
+        if not resp.startswith("ok"):
+            return None
+        try:
+            with open(out, "rb") as f:
+                data = f.read()
+            os.remove(out)
+            return data
+        except OSError:
+            return None
+
+
 def _call_emit(ev):
     with CALLP["lock"]:
         CALLP["events"].append(ev)
@@ -754,6 +844,9 @@ def call_reader():
                     elif bt == "text":
                         _call_emit({"kind": "status", "text": "组织语言中",
                                     "turn": CALLP["turn"]})
+                    if bt == "text" and pending.strip():
+                        # 上一个文字块（工具调用前的那半句）先念掉，别和下一块拼成一句
+                        flush_pending(force=True)
                 if ev.get("type") == "content_block_delta":
                     d = ev.get("delta") or {}
                     if d.get("type") == "text_delta":
@@ -772,10 +865,22 @@ def call_reader():
                         if not turn_said:
                             # 没吃到partial流（旗标不支持等情况）：整段现切现念
                             pending += block["text"]
-                            flush_pending(force=True)
+                        flush_pending(force=True)
+                        _call_emit({"kind": "text", "text": block["text"],
+                                    "turn": CALLP["turn"]})
                     elif bt == "thinking" and block.get("thinking"):
-                        # 通话模式思考不落档（effort=low本来也少），只报个状态
-                        _call_emit({"kind": "status", "text": "在想",
+                        # 和文字聊天一样：思考链落档、发给前端显示
+                        _archive_call_rec(CALLP["skey"], block["thinking"], think=True)
+                        _call_emit({"kind": "thinking", "text": block["thinking"],
+                                    "turn": CALLP["turn"]})
+                    elif bt == "tool_use":
+                        name = block.get("name") or "?"
+                        detail = tool_detail(block)
+                        append_jsonl(history_path(CALLP["skey"]),
+                                     {"who": "system", "name": "系统",
+                                      "text": "⚙ " + name + ((" · " + detail) if detail else ""),
+                                      "ts": int(time.time())})
+                        _call_emit({"kind": "tool", "name": name, "detail": detail,
                                     "turn": CALLP["turn"]})
             elif t == "result":
                 if obj.get("session_id"):
@@ -786,8 +891,11 @@ def call_reader():
                             "tin": ((u.get("input_tokens") or 0) +
                                     (u.get("cache_read_input_tokens") or 0) +
                                     (u.get("cache_creation_input_tokens") or 0)),
+                            "cr": u.get("cache_read_input_tokens") or 0,
                             "tout": u.get("output_tokens") or 0,
-                            "ms": obj.get("duration_ms") or 0})
+                            "ms": obj.get("duration_ms") or 0,
+                            "err": (str(obj.get("result"))[:800]
+                                    if obj.get("is_error") and obj.get("result") else "")})
                 turn_said = False
     except (OSError, ValueError):
         pass
@@ -1186,7 +1294,6 @@ class Handler(BaseHTTPRequestHandler):
             out["model"] = mdl if valid_model(mdl) else ""
             eff = (e.get("effort") if e else "") or ""
             out["effort"] = eff if eff in EFFORTS else ""
-            out["tts"] = (e.get("tts") if e else "") or ""   # 会话绑定的朗读嗓音
             self._send_bytes(
                 json.dumps(out, ensure_ascii=False).encode("utf-8"),
                 "application/json; charset=utf-8",
@@ -1462,10 +1569,14 @@ class Handler(BaseHTTPRequestHandler):
                          {"who": "user", "name": "用户", "text": text,
                           "ts": int(time.time())})
             send_text = text
+            vid = p.get("voice")
             if CALLP["turn"] == 0:
                 if not CALLP.get("sid"):
-                    send_text += "\n\n" + intro_text(skey)   # 新会话链的开场白
-                send_text += "\n\n" + CALL_HINT              # 每通电话的第一句都带
+                    send_text += "\n\n" + intro_text(skey, vid)   # 新会话链的开场白
+                send_text += "\n\n" + CALL_HINT              # 每次开麦的第一句都带
+            vchg = voice_change_text(skey, vid)
+            if vchg:
+                send_text += "\n\n" + vchg
             CALLP["turn"] += 1
             _call_emit({"kind": "status", "text": "已送达，等待Claude响应",
                         "turn": CALLP["turn"]})
@@ -1753,6 +1864,29 @@ class Handler(BaseHTTPRequestHandler):
                 json.dumps({"html": hp, "pdf": pdf}, ensure_ascii=False).encode("utf-8"),
                 "application/json; charset=utf-8")
             return
+        if self.path == "/speak":
+            # 本机嗓音合成（康康/慧慧），前端拿 wav 用音频元素播——回声消除才管用
+            n = int(self.headers.get("Content-Length", 0))
+            try:
+                p = json.loads(self.rfile.read(n).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                self.send_error(400)
+                return
+            text = str(p.get("text") or "").strip()[:600]
+            voice = "male" if p.get("voice") == "local-male" else "female"
+            try:
+                rate = float(p.get("rate") or 1.3)
+            except (TypeError, ValueError):
+                rate = 1.3
+            if not text:
+                self.send_error(400)
+                return
+            data = tts_synth(text, voice, max(0.5, min(3.0, rate)))
+            if not data:
+                self.send_error(501)   # 合成不可用：前端退回浏览器嗓音
+                return
+            self._send_bytes(data, "audio/wav", {"Cache-Control": "no-store"})
+            return
         if self.path == "/tts":
             # 在线神经嗓音（可选升舱）：桥接代理 edge-tts，前端拿mp3来播
             n = int(self.headers.get("Content-Length", 0))
@@ -1819,13 +1953,6 @@ class Handler(BaseHTTPRequestHandler):
                         self.send_error(400)
                         return
                     e["effort"] = ef
-                if "tts" in p:
-                    tv = str(p.get("tts") or "")
-                    if tv and not re.match(
-                            r"^(local-(fe)?male|[a-z]{2,3}-[A-Z]{2}(-[a-z]+)?-[A-Za-z]{2,40}Neural)$", tv):
-                        self.send_error(400)
-                        return
-                    e["tts"] = tv
                 save_sessions(d)
             self._send_bytes(b"ok", "text/plain")
             return
@@ -1883,7 +2010,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._handle_group(sess, text, images, up_names, stk_rels, rid)
             else:
                 self._handle_chat(sess, skey, text, images, up_names, stk_rels,
-                                  n_stickers, rid)
+                                  n_stickers, rid, payload.get("voice"))
         finally:
             with SENDING_LOCK:
                 SENDING.discard(skey)
@@ -1936,7 +2063,7 @@ class Handler(BaseHTTPRequestHandler):
             return True
 
     def _handle_chat(self, sess, skey, text, images, up_names, stk_rels,
-                     n_stickers, rid):
+                     n_stickers, rid, vid=None):
         raw_text = text
         sync_legacy_state(skey)   # 老会话的Claude还在往旧地址(state.json)投外观，搬过来
         urec = {"who": "user", "name": "用户", "text": raw_text, "ts": int(time.time())}
@@ -1955,15 +2082,18 @@ class Handler(BaseHTTPRequestHandler):
             text += "\n\n" + stk_warn_text(bad_prev)
         if skey in CALL_ENDED:
             CALL_ENDED.discard(skey)
-            text += "\n\n(刚才的语音通话已结束，现在回到文字聊天，可以正常排版。)"
+            text += "\n\n(刚才的语音对讲已关闭，现在回到文字聊天，可以正常排版。)"
         cur_sig = look_state_line(skey)
         if not sid:
-            text += "\n\n" + intro_text(skey)
+            text += "\n\n" + intro_text(skey, vid)
         elif cur_sig != LAST_LOOK_SIG.get(skey):
             # 外观变了（多半是Claude自己上一轮改的）：给它一行回读确认。
             # 桥接刚重启时也会注入一次，保证停机期间的变化不被错过。
             text += "\n\n(" + cur_sig + ")"
         LAST_LOOK_SIG[skey] = cur_sig
+        vchg = voice_change_text(skey, vid)
+        if vchg:
+            text += "\n\n" + vchg
 
         self.send_response(200)
         self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
@@ -2095,7 +2225,7 @@ class Handler(BaseHTTPRequestHandler):
                     # 旧会话接不上（被清理/ID损坏）：自动开新对话重试一次。
                     # 新链的第一条消息要补开场白，不然它不认识表情包和换装协议
                     sid = None
-                    text += "\n\n" + intro_text(skey)
+                    text += "\n\n" + intro_text(skey, vid)
                     self._emit({"kind": "note", "text": "旧会话接不上了，已自动开新对话"})
                     continue
                 err = ("".join(err_buf)).strip()[-800:]
