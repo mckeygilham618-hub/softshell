@@ -690,7 +690,18 @@
   function handle(ev) {
     var m = ev.member;   // 群聊事件带着"这是谁说的"
     var who = m ? '「' + m.name + '」' : '';
-    if (ev.kind === 'text') {
+    if (ev.kind === 'delta') {
+      // 打字机：增量字先按纯文本冒出来，整块到齐后换成正式排版气泡
+      var rd = RUN_CTX || RUNS[SKEY];
+      if (!rd || !rd.attached) return;
+      if (!rd.live) rd.live = bubble('bot', '');
+      rd.live.querySelector('.bubble').textContent += ev.text;
+      chat.scrollTop = chat.scrollHeight;
+      setStatus('正在输入');
+    }
+    else if (ev.kind === 'text') {
+      var rt = RUN_CTX || RUNS[SKEY];
+      if (rt && rt.live) { rt.live.remove(); rt.live = null; }
       botSay(ev.text, m);
       setStatus(who + '继续输出中');
     }
@@ -2216,7 +2227,7 @@
   function newRun(key, rid, abort) {
     return { key: key, rid: rid, abort: abort, status: '连接中', statT0: Date.now(),
              stats: { tin: 0, tout: 0, cr: 0, ms: 0, cut: false },
-             attached: false, typing: null, statEl: null, queue: [] };
+             attached: false, typing: null, statEl: null, queue: [], live: null };
   }
   // 对讲机沿用的旧接口：给当前会话登记/注销一轮
   function setBusy(on) {
@@ -2239,6 +2250,7 @@
     run.attached = false;
     run.statEl = null;
     run.typing = null;
+    run.live = null;
   }
   function statsText(st) {
     if (!(st.tout || st.ms)) return '';
@@ -2261,6 +2273,8 @@
       if (run.typing) { chat.appendChild(run.typing); chat.scrollTop = chat.scrollHeight; }
     } else if (ev.kind === 'stats' || ev.kind === 'status' || ev.kind === 'session') {
       runHandle(run, ev);   // 不碰屏幕的事件照常记
+    } else if (ev.kind === 'delta') {
+      // 增量字不排队：切回来时整块text已在档案里
     } else run.queue.push(ev);
   }
   function evText(ev) {
@@ -2351,6 +2365,7 @@
     }
     var st = statsText(run.stats);
     if (st) LASTSTATS[skey] = st;
+    if (run.live) { run.live.remove(); run.live = null; }
     if (run.typing) run.typing.remove();
     if (RUNS[skey] === run) delete RUNS[skey];
     if (skey === SKEY) {
