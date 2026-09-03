@@ -194,6 +194,22 @@ def intro_text(skey, vid="local-female"):
 ACTIVE = {}
 ACTIVE_LOCK = threading.Lock()
 
+# 首响看门狗：服务器过载时CLI会自己退避重试，一等好几分钟。
+# 30秒没等到模型的第一个动静就杀掉重发（等于重新路由），最多重发2次，
+# 第3次不再设限一直等。用户主动按停不算超时。
+FIRST_REPLY_TIMEOUT = 30
+
+
+def arm_watchdog(proc, wd):
+    def _fire():
+        if not wd["got"]:
+            wd["fired"] = True
+            kill_tree(proc)
+    t = threading.Timer(FIRST_REPLY_TIMEOUT, _fire)
+    t.daemon = True
+    t.start()
+    return t
+
 # 正在发送中的会话：同一会话并发发送会让CLI的会话链分叉，
 # 后完成的一轮覆盖档案，先前那轮从模型记忆里静默蒸发——必须一轮一轮来
 SENDING = set()
@@ -1715,6 +1731,46 @@ class Handler(BaseHTTPRequestHandler):
                     append_group_msg(key, "system", "系统", msg, tell=True)
             self._send_bytes(b"ok", "text/plain")
             return
+        if self.path == "/session/clone":
+            # 复制会话：同一份记忆（sid）分叉成两个窗口，各走各的。
+            # 下一轮各自 --resume 同一个旧sid，CLI给各自发新sid，从此互不影响
+            n = int(self.headers.get("Content-Length", 0))
+            try:
+                pl = json.loads(self.rfile.read(n).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                self.send_error(400)
+                return
+            with SESS_LOCK:
+                d = load_sessions()
+                src = get_session(d, str(pl.get("key", "")))
+                if not src:
+                    self.send_error(404)
+                    return
+                e = json.loads(json.dumps(src, ensure_ascii=False))   # 深拷贝：群成员各自的sid一起带走
+                base = int(time.time() * 1000)
+                while get_session(d, "s%d" % base):
+                    base += 1
+                e["key"] = "s%d" % base
+                e["name"] = (src.get("name") or "未命名") + "-副本"
+                e["ts"] = int(time.time())
+                e.pop("pin", None)
+                try:
+                    i = d["list"].index(src)
+                except ValueError:
+                    i = 0
+                d["list"].insert(i + 1, e)   # 副本排在原会话正下方
+                save_sessions(d)
+            # 聊天档案和外观文件跟着拷，副本才有完整的回放和换装状态
+            for pf in (history_path, group_log_path, look_path):
+                sp, dp = pf(src["key"]), pf(e["key"])
+                if sp and dp and os.path.isfile(sp):
+                    try:
+                        shutil.copyfile(sp, dp)
+                    except OSError:
+                        pass
+            self._send_bytes(json.dumps(e, ensure_ascii=False).encode("utf-8"),
+                             "application/json; charset=utf-8")
+            return
         if self.path == "/session/new":
             with SESS_LOCK:
                 d = load_sessions()
@@ -2144,6 +2200,8 @@ class Handler(BaseHTTPRequestHandler):
             threading.Thread(target=_feed, daemon=True).start()
             with ACTIVE_LOCK:
                 ACTIVE[rid] = {"proc": proc, "stopped": False}
+            wd = {"got": False, "fired": False}
+            wdt = arm_watchdog(proc, wd) if attempt <= 2 else None
             err_buf = []
             self.emit_lock = threading.Lock()
             drainer = threading.Thread(
@@ -2165,6 +2223,8 @@ class Handler(BaseHTTPRequestHandler):
                     except ValueError:
                         continue
                     for ev in translate(obj):
+                        if ev.get("kind") not in ("session",):
+                            wd["got"] = True
                         if ev.get("kind") == "session" and ev.get("id"):
                             new_sid = ev["id"]
                         elif ev.get("kind") == "thinking":
@@ -2194,10 +2254,14 @@ class Handler(BaseHTTPRequestHandler):
                 drainer.join(timeout=2)
             except (ConnectionError, OSError):
                 # 用户关了窗口：停掉底层进程树，别浪费额度
+                if wdt:
+                    wdt.cancel()
                 kill_tree(proc)
                 with ACTIVE_LOCK:
                     ACTIVE.pop(rid, None)
                 return
+            if wdt:
+                wdt.cancel()
             with ACTIVE_LOCK:
                 was_stopped = ACTIVE.get(rid, {}).get("stopped", False)
                 ACTIVE.pop(rid, None)
@@ -2220,6 +2284,11 @@ class Handler(BaseHTTPRequestHandler):
                 self._emit({"kind": "note", "text": stop_note})
                 self._emit({"kind": "done"})
                 return
+            if wd["fired"]:
+                self._emit({"kind": "note",
+                            "text": "服务器%d秒没响应，已重发（第%d次）"
+                                    % (FIRST_REPLY_TIMEOUT, attempt)})
+                continue
             if proc.returncode != 0 and not last_text:
                 if sid and attempt == 1:
                     # 旧会话接不上（被清理/ID损坏）：自动开新对话重试一次。
@@ -2246,7 +2315,22 @@ class Handler(BaseHTTPRequestHandler):
             return
 
     def _run_member(self, member, prompt, rid):
-        """跑一个群成员的一轮发言。返回 {text, sid, stopped, rc, err}"""
+        """跑一个群成员的一轮发言（带首响超时重发）。返回 {text, sid, stopped, rc, err}"""
+        r = None
+        for attempt in (1, 2, 3):
+            r = self._run_member_once(member, prompt, rid, watchdog=attempt <= 2)
+            if r.pop("_timeout", False) and not r.get("stopped"):
+                try:
+                    self._emit({"kind": "note",
+                                "text": "「%s」%d秒没响应，已重发（第%d次）"
+                                        % (member["name"], FIRST_REPLY_TIMEOUT, attempt)})
+                except (ConnectionError, OSError):
+                    return r
+                continue
+            return r
+        return r
+
+    def _run_member_once(self, member, prompt, rid, watchdog):
         cmd = [CLAUDE, "-p", "--output-format", "stream-json", "--verbose",
                "--dangerously-skip-permissions"]
         if valid_model(member.get("model") or ""):
@@ -2277,6 +2361,8 @@ class Handler(BaseHTTPRequestHandler):
         threading.Thread(target=_feed, daemon=True).start()
         with ACTIVE_LOCK:
             ACTIVE[rid] = {"proc": proc, "stopped": False}
+        wd = {"got": False, "fired": False}
+        wdt = arm_watchdog(proc, wd) if watchdog else None
         err_buf = []
         drainer = threading.Thread(target=self._drain_stderr, args=(proc, err_buf), daemon=True)
         drainer.start()
@@ -2297,6 +2383,7 @@ class Handler(BaseHTTPRequestHandler):
                     if ev.get("kind") == "session" and ev.get("id"):
                         new_sid = ev["id"]
                         continue
+                    wd["got"] = True
                     if ev.get("kind") == "stats":
                         saw_stats = True
                     if ev.get("kind") == "thinking":
@@ -2309,10 +2396,14 @@ class Handler(BaseHTTPRequestHandler):
             drainer.join(timeout=2)
         except (ConnectionError, OSError):
             # 用户关了窗口：停掉底层进程树，别浪费额度
+            if wdt:
+                wdt.cancel()
             kill_tree(proc)
             with ACTIVE_LOCK:
                 ACTIVE.pop(rid, None)
             raise
+        if wdt:
+            wdt.cancel()
         with ACTIVE_LOCK:
             stopped = ACTIVE.get(rid, {}).get("stopped", False)
             ACTIVE.pop(rid, None)
@@ -2325,6 +2416,7 @@ class Handler(BaseHTTPRequestHandler):
                 pass
         return {"text": "\n".join(texts).strip(), "sid": new_sid,
                 "thinks": thinks, "stopped": stopped, "rc": proc.returncode,
+                "_timeout": wd["fired"],
                 "err": ("".join(err_buf)).strip()[-800:]}
 
     def _member_prompt(self, g, member, images, fresh):

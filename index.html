@@ -349,6 +349,7 @@
   <div id="ctxthink">展开/折叠全部 thinking</div>
   <div id="ctxrename">改名</div>
   <div id="ctxexport">导出聊天记录</div>
+  <div id="ctxclone">复制会话</div>
   <div id="ctxdelete" class="danger">删除会话</div>
 </div>
 <div id="gpanel">
@@ -980,6 +981,26 @@
   document.addEventListener('click', function () { ctxmenu.style.display = 'none'; });
   document.getElementById('ctxrename').addEventListener('click', function () {
     startRename(ctxKey);
+  });
+  document.getElementById('ctxclone').addEventListener('click', function () {
+    // 复制会话：记忆分叉成独立副本，可以去副本里换个模型聊同一件事
+    fetch('/session/clone', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: ctxKey })
+    }).then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (e) {
+        if (!e) { alert('复制失败：桥接返回异常'); return; }
+        closeSearch();
+        closeDlg();
+        leaveCurrent();
+        SKEY = e.key;
+        chat.innerHTML = '';
+        paintBusy();
+        return loadSessions().then(loadLook).then(function () {
+          renderHistory(SKEY);
+          chip('这是「' + (e.name || '') + '」，和原会话共享到此刻为止的记忆，从下一条消息起各走各的');
+        });
+      }).catch(function () { alert('复制失败：桥接没响应'); });
   });
   document.getElementById('ctxdelete').addEventListener('click', function () {
     var s = SESSIONS.filter(function (x) { return x.key === ctxKey; })[0];
