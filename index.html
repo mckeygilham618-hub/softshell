@@ -309,6 +309,7 @@
     border-radius: 10px; box-shadow: 0 4px 24px rgba(0,0,0,.16);
     padding: 6px; min-width: 178px; display: none; z-index: 50;
     font-size: 14px; color: #1a1a1a; text-align: left;
+    max-height: calc(100vh - 60px); overflow-y: auto;   /* 嗓音多时可滚动 */
   }
   .popmenu.open { display: block; }
   #voicemenu { max-height: 72vh; overflow-y: auto; }
@@ -1681,8 +1682,11 @@
     // 嗓音是全局选项（存浏览器本地），不再绑定会话；旧版存过的在线嗓音id一律回落女声
     var v = '';
     try { v = localStorage.getItem('ttsVoice2') || ''; } catch (e) {}
-    return v === 'local-male' ? 'local-male' : 'local-female';
+    if (v === 'local-male') return 'local-male';
+    if (v.indexOf('local:') === 0 && VOICE_OK[v]) return v;
+    return 'local-female';
   }
+  var VOICE_OK = {};   // Mac 上桥接报上来的本机嗓音 id 表
   function pickVoice(vid) {
     // 只挑真正装在本机的嗓音（localService）。Edge 里的"Online (Natural)"在线嗓音
     // 会静默哑火（不出声、不报错），必须排除
@@ -1692,6 +1696,7 @@
     if (!vs.length) return null;
     var wants = vid === 'local-male'
       ? ['Kangkang', '康康', 'Eddy', 'Reed', 'Rocko']
+      : vid.indexOf('local:') === 0 ? [vid.slice(6).split(' (')[0]]
       : ['Huihui', '慧慧', 'Yaoyao', '瑶瑶', 'Tingting', '婷婷', 'Meijia', '美嘉'];
     for (var i = 0; i < wants.length; i++) {
       for (var j = 0; j < vs.length; j++) {
@@ -2056,7 +2061,34 @@
   })();
   fetch('/platform').then(function (r) { return r.json(); }).then(function (pf) {
     if (pf.sep) PSEP = pf.sep;
-    if (pf.voices) {
+    if (pf.voice_list && pf.voice_list.length) {
+      // Mac：把两个固定项换成系统装着的全部中文嗓音
+      var f = document.querySelector('#voicemenu .mi[data-voice="local-female"]');
+      var m = document.querySelector('#voicemenu .mi[data-voice="local-male"]');
+      var anchor = m.nextSibling;
+      f.remove(); m.remove();
+      pf.voice_list.forEach(function (v) {
+        VOICE_OK[v.id] = 1;
+        var d = document.createElement('div');
+        d.className = 'mi'; d.dataset.voice = v.id;
+        d.innerHTML = '<span></span><span class="chk">✓</span>';
+        d.firstChild.textContent = v.label;
+        voicemenu.insertBefore(d, anchor);
+      });
+      var tip = document.createElement('div');
+      tip.className = 'mtitle';
+      tip.textContent = '更好听的嗓音：系统设置 → 辅助功能 → 朗读内容 → 系统嗓音 → 管理嗓音，下载「增强」「高级」版后重开软壳';
+      tip.style.whiteSpace = 'normal';
+      voicemenu.insertBefore(tip, anchor);
+      // 旧存的 local-female/local-male 映射到婷婷 / 第一个男声
+      var cur = ''; try { cur = localStorage.getItem('ttsVoice2') || ''; } catch (e) {}
+      if (!VOICE_OK[cur]) {
+        var want = cur === 'local-male' ? 'local:Eddy' : 'local:Tingting';
+        var pick = pf.voice_list.filter(function (v) { return v.id.indexOf(want) === 0; })[0] || pf.voice_list[0];
+        try { localStorage.setItem('ttsVoice2', pick.id); } catch (e) {}
+      }
+      paintVoiceMenu();
+    } else if (pf.voices) {
       document.getElementById('vlabel-f').textContent = '本地' + (pf.voices['local-female'] || '女声');
       document.getElementById('vlabel-m').textContent = '本地' + (pf.voices['local-male'] || '男声');
     }
