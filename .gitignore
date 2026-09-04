@@ -19,6 +19,7 @@ __pycache__/
 
 # ── 开发用，不随发布上传 ──
 restart.ps1
+restart.sh
 
 # ── 开发过程中的临时文件 ──
 *.bak

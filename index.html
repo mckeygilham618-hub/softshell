@@ -422,8 +422,8 @@
 </div>
 <div class="popmenu" id="voicemenu">
   <div class="mtitle">朗读嗓音 · 全局生效（点击即试听）</div>
-  <div class="mi" data-voice="local-female"><span>本地女声（慧慧）</span><span class="chk">✓</span></div>
-  <div class="mi" data-voice="local-male"><span>本地男声（康康）</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="local-female"><span id="vlabel-f">本地女声</span><span class="chk">✓</span></div>
+  <div class="mi" data-voice="local-male"><span id="vlabel-m">本地男声</span><span class="chk">✓</span></div>
   <div class="mtitle">语速</div>
   <div class="mi" data-rate="+0%"><span>正常</span><span class="chk">✓</span></div>
   <div class="mi" data-rate="+30%"><span>舒适（默认）</span><span class="chk">✓</span></div>
@@ -782,7 +782,7 @@
     if (!g) { gridEl.innerHTML = ''; return; }
     if (!g.items.length) {
       gridEl.innerHTML = '<div class="empty">这个文件夹还是空的。<br>' +
-        '把图片拖进 <b>stickers\\' + esc(g.name) + '\\</b> 就会出现在这里，<br>' +
+        '把图片拖进 <b>stickers' + PSEP + esc(g.name) + PSEP + '</b> 就会出现在这里，<br>' +
         '不用重启，关掉面板再点开就有了。</div>';
       return;
     }
@@ -1392,7 +1392,7 @@
   var SEARCH_LIST = [];
   var sCat = 'all';
   var LINK_RE = /https?:\/\/[^\s)"'<>\]]+/;
-  var PATH_RE = /(?:[A-Za-z]:[\\\/]|~\/)[^\s"'<>|?*]+/;
+  var PATH_RE = /(?:[A-Za-z]:[\\\/]|~\/|\/(?:Users|Applications|Volumes|private|tmp|opt|usr|var|etc|home)\/)[^\s"'<>|?*]+/;
   function openSearch() {
     if (busyNow()) return;   // 流式进行中定位会整屏重画，等这轮结束
     fetch('/history?key=' + encodeURIComponent(SKEY))
@@ -1691,8 +1691,8 @@
     });
     if (!vs.length) return null;
     var wants = vid === 'local-male'
-      ? ['Kangkang', '康康']
-      : ['Huihui', '慧慧', 'Yaoyao', '瑶瑶'];
+      ? ['Kangkang', '康康', 'Eddy', 'Reed', 'Rocko']
+      : ['Huihui', '慧慧', 'Yaoyao', '瑶瑶', 'Tingting', '婷婷', 'Meijia', '美嘉'];
     for (var i = 0; i < wants.length; i++) {
       for (var j = 0; j < vs.length; j++) {
         if (vs[j].name.indexOf(wants[i]) >= 0) return vs[j];
@@ -2044,6 +2044,23 @@
     ttsBusy = true;
     playSentence(clean, function () { ttsBusy = false; if (onend) onend(); });
   }
+
+  /* 平台适配：快捷键提示（Ctrl / ⌘）、路径分隔符、本机嗓音名 */
+  var IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || '');
+  var KEY_MOD = IS_MAC ? '⌘' : 'Ctrl';
+  var PSEP = IS_MAC ? '/' : '\\';
+  (function applyKeyHints() {
+    var ta0 = document.getElementById('input');
+    ta0.placeholder = '说话（Enter换行，' + KEY_MOD + '+Enter发送，' + KEY_MOD + '+V可贴图）';
+    document.getElementById('attach').title = '发图片（也可以直接' + KEY_MOD + '+V粘贴截图）';
+  })();
+  fetch('/platform').then(function (r) { return r.json(); }).then(function (pf) {
+    if (pf.sep) PSEP = pf.sep;
+    if (pf.voices) {
+      document.getElementById('vlabel-f').textContent = '本地' + (pf.voices['local-female'] || '女声');
+      document.getElementById('vlabel-m').textContent = '本地' + (pf.voices['local-male'] || '男声');
+    }
+  }).catch(function () {});
 
   /* 嗓音选择（点击即试听） */
   var voicebtn = document.getElementById('voicebtn');
@@ -2455,8 +2472,8 @@
     }
   });
   ta.addEventListener('keydown', function (e) {
-    // 回车=换行（打列表、写多行不打断），Ctrl+回车=发送
-    if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); send(); }
+    // 回车=换行（打列表、写多行不打断），Ctrl+回车（Mac 上 ⌘+回车）=发送
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
   });
   // 输入框随内容长高，封顶约6行，发送清空后缩回
   function autoGrow() {

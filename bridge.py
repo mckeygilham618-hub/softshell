@@ -1,18 +1,22 @@
 # -*- coding: utf-8 -*-
 """Softshell —— 本地桥接
 把 Claude Code CLI 接到聊天软件风格网页界面。支持发图片、发表情包。
-双击桌面的「Softshell」快捷方式启动；再次双击只会重新打开窗口，不会重复启动。
-想彻底退出后台：任务管理器结束 pythonw.exe。
+Windows：双击 bridge.py（或桌面快捷方式）启动；Mac：双击 Softshell.command 或终端 python3 bridge.py。
+再次启动只会重新打开窗口，不会重复起服务。
+想彻底退出后台：Windows 在任务管理器结束 pythonw.exe；Mac 在活动监视器结束 Python，或终端 pkill -f bridge.py。
 
 表情包：往 stickers 下的任意子文件夹丢图片就行，子文件夹名就是面板上的页签名。
         不用重启，聊天窗口每次点开表情面板都会重新扫一遍。
 """
+import glob
 import io
 import json
 import os
 import re
 import shutil
+import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import webbrowser
@@ -21,19 +25,43 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 HOME = os.path.expanduser("~")
+IS_WIN = os.name == "nt"
+IS_MAC = sys.platform == "darwin"
+OS_LABEL = "Windows" if IS_WIN else ("macOS" if IS_MAC else "Linux")
+KEY_MOD = "⌘" if IS_MAC else "Ctrl"          # 提示词里说快捷键用
+INSTALL_HINT = ("在 PowerShell 里运行  irm https://claude.ai/install.ps1 | iex" if IS_WIN
+                else "在终端里运行  curl -fsSL https://claude.ai/install.sh | bash")
 
 
 def find_claude():
-    """找 claude CLI。先看 PATH，再看官方安装器的默认位置。"""
+    """找 claude CLI。先看 PATH，再看官方安装器 / npm / Homebrew 的默认位置。
+    Mac 上双击启动时 PATH 往往只有系统目录，所以后面这些兜底很重要。"""
     hit = shutil.which("claude")
     if hit:
         return hit
-    for p in (
-        os.path.join(HOME, ".local", "bin", "claude.exe"),
-        os.path.join(HOME, "AppData", "Local", "Programs", "claude", "claude.exe"),
-        os.path.join(HOME, ".claude", "local", "claude.exe"),
-    ):
-        if os.path.isfile(p):
+    if IS_WIN:
+        cands = [
+            os.path.join(HOME, ".local", "bin", "claude.exe"),
+            os.path.join(HOME, "AppData", "Local", "Programs", "claude", "claude.exe"),
+            os.path.join(HOME, ".claude", "local", "claude.exe"),
+        ]
+    else:
+        cands = [
+            os.path.join(HOME, ".local", "bin", "claude"),
+            os.path.join(HOME, ".claude", "local", "claude"),
+            os.path.join(HOME, ".claude", "local", "bin", "claude"),
+            "/opt/homebrew/bin/claude",
+            "/usr/local/bin/claude",
+            os.path.join(HOME, ".npm-global", "bin", "claude"),
+            os.path.join(HOME, ".volta", "bin", "claude"),
+            os.path.join(HOME, ".bun", "bin", "claude"),
+        ]
+        cands += sorted(glob.glob(os.path.join(HOME, ".nvm", "versions", "node", "*", "bin", "claude")),
+                        reverse=True)
+        cands += sorted(glob.glob(os.path.join(HOME, ".fnm", "node-versions", "*", "installation", "bin", "claude")),
+                        reverse=True)
+    for p in cands:
+        if os.path.isfile(p) and os.access(p, os.X_OK):
             return p
     return None
 
@@ -41,6 +69,25 @@ def find_claude():
 def find_browser():
     """找一个能开无地址栏应用窗口的浏览器：Edge 优先，其次 Chrome。
     都没有就返回 None，改用系统默认浏览器打开（会带地址栏，但能用）。"""
+    if not IS_WIN:
+        if IS_MAC:
+            apps = [
+                ("Microsoft Edge.app", "Microsoft Edge"),
+                ("Google Chrome.app", "Google Chrome"),
+                ("Chromium.app", "Chromium"),
+                ("Brave Browser.app", "Brave Browser"),
+            ]
+            for base in ("/Applications", os.path.join(HOME, "Applications")):
+                for app, exe in apps:
+                    p = os.path.join(base, app, "Contents", "MacOS", exe)
+                    if os.path.isfile(p):
+                        return p
+        for name in ("microsoft-edge", "google-chrome", "google-chrome-stable",
+                     "chromium", "chromium-browser", "brave-browser"):
+            hit = shutil.which(name)
+            if hit:
+                return hit
+        return None
     pf = os.environ.get("ProgramFiles", r"C:\Program Files")
     pf86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
     lad = os.environ.get("LOCALAPPDATA", os.path.join(HOME, "AppData", "Local"))
@@ -73,7 +120,9 @@ HISTORY_DIR = os.path.join(DIR, "history")           # 单聊消息档案：桥�
 EXPORT_DIR = os.path.join(DIR, "exports")            # 导出的聊天记录(md)落这里
 UPLOAD_DIR = os.path.join(DIR, "uploads")
 STICKER_DIR = os.path.join(DIR, "stickers")
-NO_WINDOW = subprocess.CREATE_NO_WINDOW
+# 子进程启动参数：Windows 不弹黑窗；POSIX 起独立进程组，中断时能整树杀掉
+SPAWN = ({"creationflags": subprocess.CREATE_NO_WINDOW} if IS_WIN
+         else {"start_new_session": True})
 
 IMG_TYPES = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
@@ -131,7 +180,49 @@ LAST_LOOK_SIG = {}
 
 # 朗读嗓音：只存在浏览器里，前端每条消息随身带 voice 字段；
 # 和外观一样，换过的那一轮追加一行回读，其余轮次不加。
-VOICE_NAMES = {"local-male": "男声「康康」", "local-female": "女声「慧慧」"}
+def _mac_voices():
+    """macOS `say` 自带的中文嗓音：女声优先婷婷，男声挑一个 zh_CN 男声。
+    返回 {"female": 完整嗓音名, "male": 完整嗓音名}，找不到就是空串。"""
+    try:
+        out = subprocess.run(["say", "-v", "?"], capture_output=True, text=True,
+                             timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return {"female": "", "male": ""}
+    zh = []
+    for ln in out.splitlines():
+        m = re.match(r"^(.*?)\s{2,}(zh_[A-Z]{2})\s", ln)
+        if m:
+            zh.append((m.group(1).strip(), m.group(2)))
+
+    def pick(wants):
+        for w in wants:
+            for name, _lang in zh:
+                if name.startswith(w):
+                    return name
+        for name, lang in zh:
+            if lang == "zh_CN":
+                return name
+        return zh[0][0] if zh else ""
+
+    return {"female": pick(["Tingting", "婷婷", "Meijia", "美嘉", "Sinji"]),
+            "male": pick(["Eddy", "Reed", "Rocko", "Grandpa"])}
+
+
+def _voice_label(full):
+    """嗓音展示名：Tingting→婷婷，'Eddy (中文（中国大陆）)'→Eddy。"""
+    if not full:
+        return "无"
+    head = full.split("(")[0].strip()
+    return {"Tingting": "婷婷", "Meijia": "美嘉", "Sinji": "善怡"}.get(head, head)
+
+
+MAC_VOICES = _mac_voices() if IS_MAC else {"female": "", "male": ""}
+LOCAL_TTS_LABEL = OS_LABEL + " 本机"
+if IS_MAC:
+    VOICE_NAMES = {"local-male": "男声「" + _voice_label(MAC_VOICES["male"]) + "」",
+                   "local-female": "女声「" + _voice_label(MAC_VOICES["female"]) + "」"}
+else:
+    VOICE_NAMES = {"local-male": "男声「康康」", "local-female": "女声「慧慧」"}
 LAST_VOICE = {}
 
 
@@ -140,7 +231,7 @@ def voice_id(v):
 
 
 def voice_state_line(vid):
-    return "当前朗读嗓音：Windows 本机" + VOICE_NAMES[voice_id(vid)] + "。"
+    return "当前朗读嗓音：" + LOCAL_TTS_LABEL + VOICE_NAMES[voice_id(vid)] + "。"
 
 
 LAST_EFFORT = {}
@@ -165,7 +256,7 @@ def voice_change_text(skey, vid):
     LAST_VOICE[skey] = vid
     if prev is None or prev == vid:
         return ""
-    return "(用户把你的朗读嗓音换成了 Windows 本机" + VOICE_NAMES[vid] + "。)"
+    return "(用户把你的朗读嗓音换成了 " + LOCAL_TTS_LABEL + VOICE_NAMES[vid] + "。)"
 
 
 # 每段新对话的第一条消息带上这段。不带的话，新会话里的Claude不知道自己能发表情包、
@@ -179,14 +270,15 @@ def intro_text(skey, vid="local-female"):
         "（选型号和数量建群，群里@成员名字点名发言）；右键会话名可以改名、置顶、导出聊天记录"
         "（md文件，存到软壳目录的exports文件夹）、删除；标题栏🔍搜索本会话"
         "聊天记录（全文/图片与表情包/链接/文件路径四类）；运行中按Esc或■随时打断；"
-        "发图用📎按钮或Ctrl+V粘贴；状态栏右侧的模型/effort按钮可切换（下一条消息生效），"
+        "发图用📎按钮或" + KEY_MOD + "+V粘贴；状态栏右侧的模型/effort按钮可切换（下一条消息生效），"
         "状态栏左侧显示的是每轮token消耗（只是数字，不可点）；"
         "聊天记录自动留档在本地，重开窗口自动回放。\n"
         "【语音对讲】标题栏📞是对讲机模式（可选件，装好识别模型才能用）：用户点一下开麦"
         "直接说话，说完停顿自动发送并闭麦；你的回复会被逐句念出来，念完自动再开麦；"
         "你念的时候用户一开口你就会被打断；再点📞关掉。对讲时没有单独页面，"
         "双方的话都以普通气泡出现在聊天窗里。语音识别（SenseVoice）和朗读都在用户本机"
-        "离线完成。朗读嗓音只有两个 Windows 本机嗓音：女声「慧慧」和男声「康康」，"
+        "离线完成。朗读嗓音只有两个 " + LOCAL_TTS_LABEL + "嗓音：" + VOICE_NAMES["local-female"] +
+        "和" + VOICE_NAMES["local-male"] + "，"
         "用户在状态栏「嗓音」里选（点击即试听，可调语速），全局生效；"
         "嗓音换了会告诉你。" + voice_state_line(vid) + "\n"
         "【表情包】" + STICKER_DIR + " 文件夹里放着表情包，用到时再翻看即可。"
@@ -225,20 +317,30 @@ SENDING_LOCK = threading.Lock()
 
 
 def kill_tree(proc):
-    """杀掉进程及其所有子进程。claude.exe 会派生子进程，
-    只 terminate() 父进程会留下孤儿继续烧额度。"""
-    try:
-        subprocess.run(
-            ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
-            creationflags=NO_WINDOW,
-            capture_output=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError):
+    """杀掉进程及其所有子进程。claude 会派生子进程，
+    只 terminate() 父进程会留下孤儿继续烧额度。
+    Windows 用 taskkill /T；POSIX 上子进程都起在独立进程组里（SPAWN），整组 SIGKILL。"""
+    if IS_WIN:
         try:
-            proc.terminate()
-        except OSError:
+            subprocess.run(
+                ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                **SPAWN,
+                capture_output=True,
+                timeout=10,
+            )
+            return
+        except (OSError, subprocess.SubprocessError):
             pass
+    else:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            return
+        except (OSError, ProcessLookupError):
+            pass
+    try:
+        proc.kill()
+    except OSError:
+        pass
 
 
 # ── 会话管理：sessions.json 由桥接独占读写，Claude 不碰它 ──
@@ -726,7 +828,7 @@ def voice_missing():
         miss.append("未安装识别引擎：pip install sherpa-onnx")
     for fn in ("model.int8.onnx", "tokens.txt", "silero_vad.onnx"):
         if not os.path.isfile(os.path.join(VOICE_DIR, fn)):
-            miss.append("缺模型文件 voice\\" + fn + "（下载地址见README语音章节）")
+            miss.append("缺模型文件 voice" + os.sep + fn + "（下载地址见README语音章节）")
     return miss
 
 
@@ -806,7 +908,8 @@ def voice_engine_up():
         return str(ex)[:300]
 
 
-# ── 本机朗读合成：常驻 PowerShell 工作进程（voice_tts.ps1），Windows OneCore 嗓音 ──
+# ── 本机朗读合成：Windows 常驻 PowerShell 工作进程（voice_tts.ps1，OneCore 嗓音）；
+#    macOS 直接调系统 `say` 命令（婷婷等自带中文嗓音），一句一进程，不用常驻 ──
 # 为什么不让浏览器自己念（speechSynthesis）：那条路的声音是系统在浏览器外面放的，
 # 浏览器的回声消除拿不到参照，通话时麦克风会把它念的话录回去当成用户说的。
 # 改成桥接合成、浏览器播放，声音就是浏览器放的，回声消除才有参照。
@@ -815,14 +918,14 @@ TTSW = {"proc": None, "lock": threading.Lock(), "voices": ""}
 
 
 def _tts_start():
-    if not os.path.isfile(TTS_SCRIPT) or os.name != "nt":
+    if not os.path.isfile(TTS_SCRIPT) or not IS_WIN:
         return None
     try:
         proc = subprocess.Popen(
             ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
              "-File", TTS_SCRIPT],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            text=True, encoding="utf-8", creationflags=NO_WINDOW)
+            text=True, encoding="utf-8", **SPAWN)
         line = proc.stdout.readline().strip()
         if not line.startswith("ready"):
             kill_tree(proc)
@@ -833,8 +936,32 @@ def _tts_start():
         return None
 
 
+def _tts_mac(text, voice, rate):
+    """macOS：say -v 嗓音 -r 语速 -o x.wav，16k 单声道。rate 是倍速，换算成每分钟词数。"""
+    name = MAC_VOICES.get(voice) or MAC_VOICES.get("female") or ""
+    if not name:
+        return None
+    out = os.path.join(tempfile.gettempdir(),
+                       "softshell_tts_%d.wav" % threading.get_ident())
+    try:
+        subprocess.run(
+            ["say", "-v", name, "-r", str(int(round(180 * rate))),
+             "-o", out, "--data-format=LEI16@16000", "-f", "-"],
+            input=text, text=True, capture_output=True, timeout=60, **SPAWN)
+        with open(out, "rb") as f:
+            data = f.read()
+        os.remove(out)
+        return data or None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 def tts_synth(text, voice, rate):
     """合成一句 → wav 字节；失败返回 None（前端自动退回浏览器嗓音）。"""
+    if IS_MAC:
+        return _tts_mac(text, voice, rate)
+    if not IS_WIN:
+        return None
     with TTSW["lock"]:
         proc = TTSW["proc"]
         if proc is None or proc.poll() is not None:
@@ -1390,6 +1517,18 @@ class Handler(BaseHTTPRequestHandler):
                 {"Cache-Control": "no-store"},
             )
             return
+        if path == "/platform":
+            self._send_bytes(
+                json.dumps({"os": "win" if IS_WIN else ("mac" if IS_MAC else "linux"),
+                            "key_mod": KEY_MOD,
+                            "voices": VOICE_NAMES,
+                            "sep": os.sep,
+                            "claude": bool(CLAUDE)},
+                           ensure_ascii=False).encode("utf-8"),
+                "application/json; charset=utf-8",
+                {"Cache-Control": "no-store"},
+            )
+            return
         if path == "/sticker":
             q = parse_qs(urlparse(self.path).query)
             p = sticker_path((q.get("f") or [""])[0])
@@ -1615,7 +1754,7 @@ class Handler(BaseHTTPRequestHandler):
                 proc = subprocess.Popen(
                     cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL, cwd=HOME,
-                    encoding="utf-8", errors="replace", creationflags=NO_WINDOW)
+                    encoding="utf-8", errors="replace", **SPAWN)
             except OSError as ex:
                 self._send_bytes(json.dumps({"ok": False, "err": str(ex)[:200]},
                                             ensure_ascii=False).encode("utf-8"),
@@ -2060,15 +2199,15 @@ class Handler(BaseHTTPRequestHandler):
                 # 无头打印成真文本PDF：文字可选中/可搜索/可编辑，不是截图。
                 # 单独的user-data-dir防止和正在开着的Edge窗口抢配置目录
                 pp = os.path.join(EXPORT_DIR, base + ".pdf")
-                prof = os.path.join(os.environ.get("TEMP", DIR), "softshell-pdf-profile")
+                prof = os.path.join(tempfile.gettempdir(), "softshell-pdf-profile")
                 try:
                     subprocess.run(
                         [BROWSER, "--headless", "--disable-gpu",
                          "--user-data-dir=" + prof,
                          "--no-pdf-header-footer",
                          "--print-to-pdf=" + pp,
-                         "file:///" + hp.replace("\\", "/")],
-                        creationflags=NO_WINDOW, capture_output=True, timeout=90)
+                         "file:///" + os.path.abspath(hp).replace("\\", "/").lstrip("/")],
+                        **SPAWN, capture_output=True, timeout=90)
                     if os.path.isfile(pp) and os.path.getsize(pp) > 0:
                         pdf = pp
                 except (OSError, subprocess.SubprocessError):
@@ -2319,7 +2458,7 @@ class Handler(BaseHTTPRequestHandler):
         if not CLAUDE:
             self._emit({"kind": "error", "text":
                         "没找到 claude 命令。请先安装 Claude Code CLI："
-                        "在 PowerShell 里运行  irm https://claude.ai/install.ps1 | iex"})
+                        + INSTALL_HINT})
             self._emit({"kind": "done"})
             return
 
@@ -2343,7 +2482,7 @@ class Handler(BaseHTTPRequestHandler):
                 proc = subprocess.Popen(
                     cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE, cwd=HOME,
-                    encoding="utf-8", errors="replace", creationflags=NO_WINDOW,
+                    encoding="utf-8", errors="replace", **SPAWN,
                 )
             except OSError as ex:
                 self._emit({"kind": "error", "text": "启动claude失败：" + str(ex)[:300]})
@@ -2487,7 +2626,7 @@ class Handler(BaseHTTPRequestHandler):
             proc = subprocess.Popen(
                 cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, cwd=HOME,
-                encoding="utf-8", errors="replace", creationflags=NO_WINDOW,
+                encoding="utf-8", errors="replace", **SPAWN,
             )
         except OSError as ex:
             return {"text": "", "sid": None, "stopped": False, "rc": -1,
@@ -2602,7 +2741,7 @@ class Handler(BaseHTTPRequestHandler):
         if not CLAUDE:
             self._emit({"kind": "error", "text":
                         "没找到 claude 命令。请先安装 Claude Code CLI："
-                        "在 PowerShell 里运行  irm https://claude.ai/install.ps1 | iex"})
+                        + INSTALL_HINT})
             self._emit({"kind": "done"})
             return
         gkey = sess["key"]
@@ -2901,7 +3040,9 @@ class Handler(BaseHTTPRequestHandler):
 class SingleInstanceServer(ThreadingHTTPServer):
     # Windows 默认允许多进程绑同一端口，会导致每次双击都起一个新服务。
     # 关掉端口复用，第二次绑定才会失败，防重复启动的逻辑才生效。
-    allow_reuse_address = False
+    # macOS/Linux 上 SO_REUSEADDR 不允许两个进程同时监听，只是让刚退出后能马上重开，
+    # 所以留着。
+    allow_reuse_address = not IS_WIN
 
 
 def open_window():
@@ -2909,7 +3050,7 @@ def open_window():
     if BROWSER:
         subprocess.Popen(
             [BROWSER, "--app=" + url, "--window-size=900,860"],
-            creationflags=NO_WINDOW,
+            **SPAWN,
         )
     else:
         # 没找到 Edge/Chrome：用系统默认浏览器，会带地址栏但功能一样

@@ -3,9 +3,9 @@
 **给你付费订阅的 Claude 一个聊天软件风格的沟通界面。**
 
 **A chat-app style interface for the Claude subscription you already pay for.**
-Runs on the Claude Code CLI. No Claude desktop app, no admin rights, no virtualization.
+Runs on the Claude Code CLI. Windows and macOS. No Claude desktop app, no admin rights, no virtualization.
 
-> **EN TL;DR** — Softshell is a local, WeChat-style chat window for the Claude Code CLI on Windows: chat bubbles, stickers, avatars, multi-session, and group chats where several Claude models talk to each other. One Python file + one HTML file, no server, no telemetry, MIT. UI is Chinese-first.
+> **EN TL;DR** — Softshell is a local, WeChat-style chat window for the Claude Code CLI on Windows and macOS: chat bubbles, stickers, avatars, multi-session, and group chats where several Claude models talk to each other. One Python file + one HTML file, no server, no telemetry, MIT. UI is Chinese-first.
 
 ---
 
@@ -17,7 +17,7 @@ Runs on the Claude Code CLI. No Claude desktop app, no admin rights, no virtuali
 
 - **界面全中文**，像用聊天软件一样
 - **消息双向渲染**：你发的消息也享受 markdown 排版——粗体、斜体、删除线、表格、代码块、列表、引用、链接都认
-- **能发图**：点回形针选图，或直接 `Ctrl+V` 粘贴截图
+- **能发图**：点回形针选图，或直接 `Ctrl+V`（Mac 上 `⌘V`）粘贴截图
 - **表情包**：往 `stickers/` 里丢图，AI 会自己挑合适的发给你；找不到合适的，它会开口跟你要
 - **随时打断**：运行中点 ■ 或按 `Esc`，立刻停下，不再消耗额度
 - **多会话＋群聊**：左侧栏开多个会话，每个配不同的模型和形象；还能把几个 Claude 拉进一个群，@谁谁发言——三个模型当场辩论，一次 API 都不用切
@@ -29,6 +29,7 @@ Runs on the Claude Code CLI. No Claude desktop app, no admin rights, no virtuali
 - 不需要装 Claude 桌面应用
 - 不需要管理员权限
 - 不需要开启 Virtual Machine Platform 或 Hyper-V
+- **Windows 和 macOS 都能用**：同一份代码，自动识别系统
 - 不需要特定订阅档位——只要你的 `claude` 命令能跑就行（订阅、API key、云厂商、网关都算）
 - 不需要联网到本工具的任何服务器（因为没有）
 
@@ -54,6 +55,8 @@ Claude 桌面版在任务进行中会要求授权各种操作权限。**Softshel
 
 Softshell **不捆绑 Claude Code CLI**，你需要自己安装它、用自己的账号登录。
 
+**Windows：**
+
 ```bash
 git clone https://github.com/mckeygilham618-hub/softshell.git
 cd softshell
@@ -63,6 +66,19 @@ python bridge.py
 跑起来会自动弹出聊天窗口。之后想再开，双击 `bridge.py` 即可，也可以自己建个快捷方式放桌面。
 
 > Windows 上如果不想每次弹出黑色控制台窗口，用 `pythonw.exe bridge.py` 代替 `python bridge.py`。
+
+**macOS：**
+
+```bash
+git clone https://github.com/mckeygilham618-hub/softshell.git
+cd softshell
+python3 bridge.py
+```
+
+之后想再开，在 Finder 里双击 `Softshell.command` 就行（首次可能被系统拦下：右键 → 打开）。它会在后台起服务并弹出聊天窗口，再次双击只会重新打开窗口，不会重复起服务。想彻底退出，在活动监视器里结束 Python，或终端里 `pkill -f bridge.py`。
+
+> macOS 自带的 `python3` 就够用（3.8+）。装了 Chrome 或 Edge 会以无地址栏的独立窗口打开，没装就用 Safari 打开（带地址栏，功能一样）。
+> 想在桌面放个入口：把 `Softshell.command` 拖到 Dock 右侧或做个替身放桌面。
 
 ## 用法
 
@@ -101,7 +117,7 @@ stickers/共享/无奈-扶额.jpg
 
 对讲机模式：点📞开麦，直接说；说完停一下自动发送，麦克风随即闭麦；Claude 的回复**边生成边逐句念出来**，念完自动再开麦，你接着说。全程不占屏幕：没有通话页面，你说的话和它的回复都以普通气泡实时出现在聊天窗里（思考链、工具调用照常显示），窗口缩小、切去别的软件干活都不影响轮转。**它念的时候你一开口，它就停下来听你的。**再点📞关掉。
 
-采音在你的浏览器内完成；识别在你本机完成（SenseVoice），朗读也在你本机完成（Windows 自带的康康/慧慧嗓音，由软壳合成后交给浏览器播放，所以浏览器的回声消除能减掉它自己的声音，外放也不会自听自话）。**整条语音链路完全离线、免费、无密钥**，只有 Claude 本身走网络。回复速度取决于所选模型的思考时长——快模型首句几秒可达，深思考模型该想还是要想。
+采音在你的浏览器内完成；识别在你本机完成（SenseVoice），朗读也在你本机完成（Windows 用系统自带的康康/慧慧嗓音，macOS 用系统自带的婷婷等中文嗓音，由软壳合成后交给浏览器播放，所以浏览器的回声消除能减掉它自己的声音，外放也不会自听自话）。**整条语音链路完全离线、免费、无密钥**，只有 Claude 本身走网络。回复速度取决于所选模型的思考时长——快模型首句几秒可达，深思考模型该想还是要想。
 
 不装不影响软壳本体。想用的话三步：
 
@@ -111,14 +127,14 @@ stickers/共享/无奈-扶额.jpg
 pip install sherpa-onnx
 ```
 
-2. 下载两个模型文件，放进软壳目录的 `voice\` 文件夹：
-   - [SenseVoice 识别模型](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2)（约250MB，解压后把里面的 `model.int8.onnx` 和 `tokens.txt` 放进 `voice\`）
+2. 下载两个模型文件，放进软壳目录的 `voice/` 文件夹：
+   - [SenseVoice 识别模型](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2)（约250MB，解压后把里面的 `model.int8.onnx` 和 `tokens.txt` 放进 `voice/`）
    - [silero_vad.onnx](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx)（约2MB，断句用）
 3. 点📞开麦（首次会请求麦克风权限）。
 
-**热词纠正**：语音识别爱按词频抢答（比如把 Claude 听成 cloud）。第一次通话后 `voice\hotwords.txt` 会自动出现，每行一条「听错的词=>该是的词」，自己往里加就行，存盘即生效。
+**热词纠正**：语音识别爱按词频抢答（比如把 Claude 听成 cloud）。第一次通话后 `voice/hotwords.txt` 会自动出现，每行一条「听错的词=>该是的词」，自己往里加就行，存盘即生效。
 
-**朗读嗓音**在底部状态栏「嗓音」里选，点击即试听，全局生效。只有两个本机嗓音：女声（Windows 自带的慧慧）和男声（康康），不联网、不下载、开箱即用。不用 Edge 的"在线自然嗓音"，是因为它们在部分网络环境下会静默哑火（不出声也不报错）；本机嗓音音质朴素，但稳。
+**朗读嗓音**在底部状态栏「嗓音」里选，点击即试听，全局生效。只有两个本机嗓音：Windows 上是女声慧慧和男声康康，macOS 上是女声婷婷和男声 Eddy（系统 `say` 命令自带；「系统设置 → 辅助功能 → 朗读内容 → 系统嗓音」里可以下载音质更好的中文嗓音，软壳会自动选用），不联网、不下载、开箱即用。不用 Edge 的"在线自然嗓音"，是因为它们在部分网络环境下会静默哑火（不出声也不报错）；本机嗓音音质朴素，但稳。
 
 > 语音识别引擎为阿里 FunAudioLLM 团队开源的 SenseVoice-Small（FunASR Model License v1.1，允许商用、要求署名——特此致谢）。支持普通话、粤语、英语、日语、韩语。
 > 说明：回复速度取决于所选 Claude 模型的思考时长，体验更像对讲机而非电话——它听得快，想得没那么快。
