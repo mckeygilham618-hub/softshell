@@ -33,20 +33,6 @@ Runs on the Claude Code CLI. Windows and macOS. No Claude desktop app, no admin 
 - 不需要特定订阅档位——只要你的 `claude` 命令能跑就行（订阅、API key、云厂商、网关都算）
 - 不需要联网到本工具的任何服务器（因为没有）
 
-## ⚠️ 装之前先知道：本产品移除了权限刹车
-
-Claude 桌面版在任务进行中会要求授权各种操作权限。**Softshell 移除了这道刹车。**
-
-原因很实际：它问得太频繁，没人回答它就自己停在那里不接着干。
-
-所以在 Softshell 里，Claude 会直接在你机器上跑各种命令，不再问你。运行中点 ■ 或按 `Esc` 可以随时打断。
-
-如果你是每次Claude问你要授权，你100%允许的，你适合本产品；如果你要认真审批它的请求的，不要下载此产品。
-
-除了运行中随时可按的停止键（■ 或 Esc），软壳没有安装任何其他刹车。
-
-（带权限确认的版本在计划中。）
-
 ## 安装
 
 **前置条件：**[Python 3.8+](https://www.python.org/downloads/)（安装时勾选 *Add to PATH*）和 [Claude Code CLI](https://code.claude.com/docs/en/quickstart)，并且 `claude` 命令能正常登录使用。
