@@ -17,6 +17,9 @@ stickers/**/*.bmp
 __pycache__/
 *.pyc
 
+# ── 原生窗口的编译产物（源码在 native/，启动时自动编译）──
+SoftshellWindow.app/
+
 # ── 开发用，不随发布上传 ──
 restart.ps1
 restart.sh

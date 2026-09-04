@@ -8,6 +8,10 @@ if ! command -v python3 >/dev/null 2>&1; then
   osascript -e 'display alert "没找到 python3" message "请先安装 Python 3.8+（brew install python 或 python.org），再双击本文件。"'
   exit 1
 fi
+# 原生窗口没编译过（或源码更新过）就自动编译一次；没装 Xcode 命令行工具则跳过，退回浏览器
+if command -v swiftc >/dev/null 2>&1 && [ native/SoftshellWindow.swift -nt SoftshellWindow.app/Contents/MacOS/SoftshellWindow ]; then
+  bash native/build.sh >/dev/null 2>&1 || true
+fi
 nohup python3 bridge.py >/dev/null 2>&1 &
 disown
 osascript -e 'tell application "Terminal" to close (every window whose name contains "Softshell.command")' >/dev/null 2>&1 &

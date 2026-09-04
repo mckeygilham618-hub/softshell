@@ -313,7 +313,7 @@ def intro_text(skey, vid="local-female"):
         "双方的话都以普通气泡出现在聊天窗里。语音识别（SenseVoice）和朗读都在用户本机"
         "离线完成。朗读嗓音只有两个 " + LOCAL_TTS_LABEL + "嗓音：" + VOICE_NAMES["local-female"] +
         "和" + VOICE_NAMES["local-male"] + "，"
-        "用户在状态栏「嗓音」里选（点击即试听，可调语速），全局生效；"
+        "用户在状态栏「嗓音」里选（点击即试听），全局生效；"
         "嗓音换了会告诉你。" + voice_state_line(vid) + "\n"
         "【表情包】" + STICKER_DIR + " 文件夹里放着表情包，用到时再翻看即可。"
         "发送方式：写 [[表情:文件名]]（带不带后缀都认），单独占一行会显示成"
@@ -836,7 +836,44 @@ def group_intro(g, member):
 # 桥接跑 VAD+SenseVoice；通话用常驻CLI进程流式生成，逐句切给前端念。
 VOICE_DIR = os.path.join(DIR, "voice")
 VOICE = {"rec": None, "vad": None, "queue": [], "err": "",
-         "plock": threading.Lock(), "lock": threading.Lock()}
+         "plock": threading.Lock(), "lock": threading.Lock(),
+         "segs": [], "seg_cv": threading.Condition(), "worker": None,
+         "ring": None, "ring_off": 0}
+PREROLL = 4000   # VAD 触发前的 0.25 秒也一起送去识别：silero 反应慢半拍，不补会掐掉首音节
+
+
+def _asr_worker():
+    """识别线程：VAD 切出来的整句在这里解码。收音频的请求只做断句、立刻返回，
+    否则识别慢一点（尤其全精度模型）浏览器那头就会丢掉正在说的下一句开头。"""
+    while True:
+        with VOICE["seg_cv"]:
+            while not VOICE["segs"]:
+                VOICE["seg_cv"].wait()
+            seg = VOICE["segs"].pop(0)
+        rec = VOICE["rec"]
+        if rec is None:
+            continue
+        try:
+            st = rec.create_stream()
+            st.accept_waveform(16000, seg)
+            rec.decode_stream(st)
+            tx = hotword_fix(st.result.text.strip())
+            if tx:
+                with VOICE["lock"]:
+                    VOICE["queue"].append(tx)
+        except Exception as ex:              # noqa: BLE001
+            VOICE["err"] = "识别异常：" + str(ex)[:200]
+
+
+def _resample_to_16k(samples, sr):
+    """浏览器的 AudioContext 不一定给 16k（Safari 会无视 sampleRate 选项），线性插值到 16k。"""
+    import numpy as np
+    if sr == 16000 or sr <= 0 or len(samples) == 0:
+        return samples
+    n = int(round(len(samples) * 16000.0 / sr))
+    x_old = np.linspace(0.0, 1.0, num=len(samples), endpoint=False)
+    x_new = np.linspace(0.0, 1.0, num=n, endpoint=False)
+    return np.interp(x_new, x_old, samples).astype(np.float32)
 CALLP = {"proc": None, "skey": "", "reader": None, "events": [],
          "turn": 0, "sid": None, "lock": threading.Lock()}
 SENT_SPLIT_RE = re.compile(r"[^。！？!?\n；;]*[。！？!?\n；;]+")
@@ -854,13 +891,24 @@ CALL_HINT = (
 CALL_ENDED = set()   # 挂断过电话的会话：下一条文字消息告知它已回到打字聊天
 
 
+def asr_model_path():
+    """识别模型：voice/ 里有全精度 model.onnx 就优先用它，否则用 int8 量化版。"""
+    for fn in ("model.onnx", "model.int8.onnx"):
+        p = os.path.join(VOICE_DIR, fn)
+        if os.path.isfile(p) and os.path.getsize(p) > 1000000:
+            return p
+    return ""
+
+
 def voice_missing():
     miss = []
     try:
         import sherpa_onnx  # noqa: F401
     except ImportError:
         miss.append("未安装识别引擎：pip install sherpa-onnx")
-    for fn in ("model.int8.onnx", "tokens.txt", "silero_vad.onnx"):
+    if not asr_model_path():
+        miss.append("缺模型文件 voice" + os.sep + "model.int8.onnx（下载地址见README语音章节）")
+    for fn in ("tokens.txt", "silero_vad.onnx"):
         if not os.path.isfile(os.path.join(VOICE_DIR, fn)):
             miss.append("缺模型文件 voice" + os.sep + fn + "（下载地址见README语音章节）")
     return miss
@@ -923,7 +971,7 @@ def voice_engine_up():
     try:
         import sherpa_onnx
         VOICE["rec"] = sherpa_onnx.OfflineRecognizer.from_sense_voice(
-            model=os.path.join(VOICE_DIR, "model.int8.onnx"),
+            model=asr_model_path(),
             tokens=os.path.join(VOICE_DIR, "tokens.txt"),
             use_itn=True, language="auto", num_threads=2)
         vcfg = sherpa_onnx.VadModelConfig()
@@ -935,6 +983,9 @@ def voice_engine_up():
         vcfg.sample_rate = 16000
         VOICE["vad"] = sherpa_onnx.VoiceActivityDetector(
             vcfg, buffer_size_in_seconds=60)
+        if VOICE["worker"] is None:
+            VOICE["worker"] = threading.Thread(target=_asr_worker, daemon=True)
+            VOICE["worker"].start()
         return ""
     except Exception as ex:                        # noqa: BLE001 可选件要能报错
         VOICE["rec"] = None
@@ -1723,24 +1774,36 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 import numpy as np
+                try:
+                    sr = int(self.headers.get("X-Sample-Rate") or 16000)
+                except ValueError:
+                    sr = 16000
                 samples = (np.frombuffer(raw[: len(raw) // 2 * 2], dtype=np.int16)
                            .astype(np.float32) / 32768.0)
-                texts = []
+                samples = _resample_to_16k(samples, sr)
+                segs = []
                 with VOICE["plock"]:
-                    vad, rec = VOICE["vad"], VOICE["rec"]
+                    vad = VOICE["vad"]
+                    ring = VOICE["ring"]
+                    ring = samples if ring is None else np.concatenate([ring, samples])
+                    if len(ring) > 16000 * 60:          # 只留最近 60 秒
+                        VOICE["ring_off"] += len(ring) - 16000 * 60
+                        ring = ring[-16000 * 60:]
+                    VOICE["ring"] = ring
                     vad.accept_waveform(samples)
                     while not vad.empty():
-                        seg = vad.front.samples
+                        seg = vad.front
+                        a = seg.start - VOICE["ring_off"]       # 段起点在 ring 里的位置
+                        b = a + len(seg.samples)
+                        if 0 <= a <= len(ring) and b <= len(ring):
+                            segs.append(ring[max(0, a - PREROLL):b].copy())
+                        else:
+                            segs.append(seg.samples)
                         vad.pop()
-                        st = rec.create_stream()
-                        st.accept_waveform(16000, seg)
-                        rec.decode_stream(st)
-                        tx = hotword_fix(st.result.text.strip())
-                        if tx:
-                            texts.append(tx)
-                if texts:
-                    with VOICE["lock"]:
-                        VOICE["queue"].extend(texts)
+                if segs:
+                    with VOICE["seg_cv"]:
+                        VOICE["segs"].extend(segs)
+                        VOICE["seg_cv"].notify()
             except Exception as ex:              # noqa: BLE001
                 VOICE["err"] = "识别异常：" + str(ex)[:200]
             self._send_bytes(b'{"ok": true}', "application/json; charset=utf-8")
@@ -3079,9 +3142,21 @@ class SingleInstanceServer(ThreadingHTTPServer):
     allow_reuse_address = not IS_WIN
 
 
+def native_window():
+    """macOS 原生窗口（native/ 目录编译出的 SoftshellWindow.app）。
+    麦克风权限记在这个 App 名下，系统只问一次；没编译过就返回 None。"""
+    if not IS_MAC:
+        return None
+    exe = os.path.join(DIR, "SoftshellWindow.app", "Contents", "MacOS", "SoftshellWindow")
+    return exe if os.path.isfile(exe) else None
+
+
 def open_window():
     url = "http://127.0.0.1:%d/" % PORT
-    if BROWSER:
+    nw = native_window()
+    if nw:
+        subprocess.Popen([nw, url], **SPAWN)
+    elif BROWSER:
         subprocess.Popen(
             [BROWSER, "--app=" + url, "--window-size=900,860"],
             **SPAWN,

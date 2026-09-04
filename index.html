@@ -425,9 +425,6 @@
   <div class="mtitle">朗读嗓音 · 全局生效（点击即试听）</div>
   <div class="mi" data-voice="local-female"><span id="vlabel-f">本地女声</span><span class="chk">✓</span></div>
   <div class="mi" data-voice="local-male"><span id="vlabel-m">本地男声</span><span class="chk">✓</span></div>
-  <div class="mtitle">语速</div>
-  <div class="mi" data-rate="+0%"><span>正常</span><span class="chk">✓</span></div>
-  <div class="mi" data-rate="+20%"><span>1.2倍速（默认）</span><span class="chk">✓</span></div>
 </div>
 <div class="popmenu" id="effortmenu">
   <div class="mtitle">Effort</div>
@@ -1671,11 +1668,7 @@
 
   /* ── 语音通话v2：浏览器采音(自带回声消除)→桥接VAD/识别；
         常驻CLI进程流式生成，逐句取mp3连播；你插话即打断 ── */
-  function curRate() {
-    var r = '+20%';
-    try { r = localStorage.getItem('ttsRate') || '+20%'; } catch (e) {}
-    return r === '+0%' ? '+0%' : '+20%';   // 只有两档：正常 / 1.2倍速
-  }
+  function curRate() { return '+20%'; }   // 语速固定 1.2 倍速，不再可调
   function curVoiceId() {
     // 嗓音是全局选项（存浏览器本地），不再绑定会话；旧版存过的在线嗓音id一律回落女声
     var v = '';
@@ -1979,19 +1972,33 @@
     var src = WK.ac.createMediaStreamSource(WK.stream);
     WK.node = WK.ac.createScriptProcessor(4096, 1, 1);
     var feeding = false;
+    var backlog = [];          // 上一块还在路上时先攒着，不丢（丢了就是吃字）
+    var SR = WK.ac.sampleRate; // Safari 会无视 16000 的要求，实际多少告诉桥接去重采样
+    function flushFeed() {
+      if (feeding || !backlog.length || !WK.on) return;
+      var total = 0;
+      backlog.forEach(function (b) { total += b.length; });
+      var i16 = new Int16Array(total), off = 0;
+      backlog.forEach(function (b) { i16.set(b, off); off += b.length; });
+      backlog = [];
+      feeding = true;
+      fetch('/voice/feed', { method: 'POST', headers: { 'X-Sample-Rate': String(SR) },
+                             body: i16.buffer })
+        .catch(function () {})
+        .then(function () { feeding = false; flushFeed(); });
+    }
     WK.node.onaudioprocess = function (ev2) {
       // 通道常开、一直送：识别引擎的断句状态才连续；闭麦期间由前端丢弃结果
-      if (!WK.on || feeding) return;
+      if (!WK.on) return;
       var f = ev2.inputBuffer.getChannelData(0);
       var i16 = new Int16Array(f.length);
       for (var i = 0; i < f.length; i++) {
         var s = Math.max(-1, Math.min(1, f[i]));
         i16[i] = s < 0 ? s * 32768 : s * 32767;
       }
-      feeding = true;
-      fetch('/voice/feed', { method: 'POST', body: i16.buffer })
-        .catch(function () {})
-        .then(function () { feeding = false; });
+      backlog.push(i16);
+      if (backlog.length > 80) backlog.shift();   // 桥接卡死超过 20 秒才开始丢
+      flushFeed();
     };
     src.connect(WK.node);
     WK.node.connect(WK.ac.destination);
@@ -2104,10 +2111,6 @@
     voicemenu.querySelectorAll('.mi[data-voice]').forEach(function (mi) {
       mi.classList.toggle('on', mi.dataset.voice === cur);
     });
-    var rate = curRate();
-    voicemenu.querySelectorAll('.mi[data-rate]').forEach(function (mi) {
-      mi.classList.toggle('on', mi.dataset.rate === rate);
-    });
   }
   voicebtn.addEventListener('click', function (e) {
     e.stopPropagation();
@@ -2121,13 +2124,6 @@
     var mi = e.target.closest('.mi');
     if (!mi) return;
     if (!WK.on) unlockAudio();
-    if (mi.dataset.rate !== undefined) {   // 调语速：立即试听新速度
-      try { localStorage.setItem('ttsRate', mi.dataset.rate); } catch (e2) {}
-      paintVoiceMenu();
-      stopSpeak();
-      speak('现在我用这个速度说话，你听听合不合拍。');
-      return;
-    }
     if (mi.dataset.voice === undefined) return;
     var vid = mi.dataset.voice;
     try { localStorage.setItem('ttsVoice2', vid); } catch (e2) {}   // 全局生效，不绑会话
