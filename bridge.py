@@ -246,24 +246,7 @@ def _voice_label(full):
     return full.split("(")[0].strip()
 
 
-def _mac_voice_list(exclude=()):
-    """macOS 上装着的其余中文嗓音（普通话/台湾/粤语），给「更多本机嗓音」用。
-    id 形如 local:Tingting；同名不同语种保留各自完整名。"""
-    lst, seen = [], set()
-    for name, lang, cn in _mac_scan():
-        if name in seen or name in exclude:
-            continue
-        seen.add(name)
-        region = {"zh_CN": "普通话", "zh_TW": "台湾", "zh_HK": "粤语", "yue_CN": "粤语"}.get(lang, lang)
-        lst.append({"id": "local:" + name, "label": cn + "（" + region + "）", "lang": lang})
-    order = {"zh_CN": 0, "zh_TW": 1, "zh_HK": 2, "yue_CN": 2}
-    lst.sort(key=lambda v: (order.get(v["lang"], 9), v["label"]))
-    return lst
-
-
 MAC_VOICES = _mac_voices() if IS_MAC else {"female": "", "male": ""}
-MAC_VOICE_LIST = _mac_voice_list(exclude=set(MAC_VOICES.values())) if IS_MAC else []
-MAC_VOICE_IDS = {v["id"]: v for v in MAC_VOICE_LIST}
 LOCAL_TTS_LABEL = OS_LABEL + " 本机"
 if IS_MAC:
     VOICE_NAMES = {"local-male": "男声「" + _voice_label(MAC_VOICES["male"]) + "」",
@@ -274,18 +257,11 @@ LAST_VOICE = {}
 
 
 def voice_id(v):
-    if v == "local-male":
-        return "local-male"
-    if IS_MAC and isinstance(v, str) and v in MAC_VOICE_IDS:
-        return v
-    return "local-female"
+    return "local-male" if v == "local-male" else "local-female"
 
 
 def voice_name(vid):
-    vid = voice_id(vid)
-    if vid in MAC_VOICE_IDS:
-        return "「" + MAC_VOICE_IDS[vid]["label"] + "」"
-    return VOICE_NAMES[vid]
+    return VOICE_NAMES[voice_id(vid)]
 
 
 def voice_state_line(vid):
@@ -335,9 +311,8 @@ def intro_text(skey, vid="local-female"):
         "直接说话，说完停顿自动发送并闭麦；你的回复会被逐句念出来，念完自动再开麦；"
         "你念的时候用户一开口你就会被打断；再点📞关掉。对讲时没有单独页面，"
         "双方的话都以普通气泡出现在聊天窗里。语音识别（SenseVoice）和朗读都在用户本机"
-        "离线完成。朗读嗓音是 " + LOCAL_TTS_LABEL + "嗓音" +
-        ("（列表里是系统装着的全部中文嗓音）" if IS_MAC else
-         "：" + VOICE_NAMES["local-female"] + "和" + VOICE_NAMES["local-male"]) + "，"
+        "离线完成。朗读嗓音只有两个 " + LOCAL_TTS_LABEL + "嗓音：" + VOICE_NAMES["local-female"] +
+        "和" + VOICE_NAMES["local-male"] + "，"
         "用户在状态栏「嗓音」里选（点击即试听，可调语速），全局生效；"
         "嗓音换了会告诉你。" + voice_state_line(vid) + "\n"
         "【表情包】" + STICKER_DIR + " 文件夹里放着表情包，用到时再翻看即可。"
@@ -997,10 +972,7 @@ def _tts_start():
 
 def _tts_mac(text, voice, rate):
     """macOS：say -v 嗓音 -r 语速 -o x.wav，16k 单声道。rate 是倍速，换算成每分钟词数。"""
-    if voice.startswith("local:") and voice in MAC_VOICE_IDS:
-        name = voice[6:]
-    else:
-        name = MAC_VOICES.get(voice) or MAC_VOICES.get("female") or ""
+    name = MAC_VOICES.get(voice) or MAC_VOICES.get("female") or ""
     if not name:
         return None
     out = os.path.join(tempfile.gettempdir(),
@@ -1584,7 +1556,6 @@ class Handler(BaseHTTPRequestHandler):
                 json.dumps({"os": "win" if IS_WIN else ("mac" if IS_MAC else "linux"),
                             "key_mod": KEY_MOD,
                             "voices": VOICE_NAMES,
-                            "voice_list": MAC_VOICE_LIST,
                             "sep": os.sep,
                             "claude": bool(claude_bin())},
                            ensure_ascii=False).encode("utf-8"),
@@ -2288,11 +2259,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error(400)
                 return
             text = str(p.get("text") or "").strip()[:600]
-            vreq = p.get("voice")
-            if IS_MAC and isinstance(vreq, str) and vreq in MAC_VOICE_IDS:
-                voice = vreq
-            else:
-                voice = "male" if vreq == "local-male" else "female"
+            voice = "male" if p.get("voice") == "local-male" else "female"
             try:
                 rate = float(p.get("rate") or 1.3)
             except (TypeError, ValueError):

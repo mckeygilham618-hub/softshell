@@ -427,9 +427,7 @@
   <div class="mi" data-voice="local-male"><span id="vlabel-m">本地男声</span><span class="chk">✓</span></div>
   <div class="mtitle">语速</div>
   <div class="mi" data-rate="+0%"><span>正常</span><span class="chk">✓</span></div>
-  <div class="mi" data-rate="+30%"><span>舒适（默认）</span><span class="chk">✓</span></div>
-  <div class="mi" data-rate="+50%"><span>爽快</span><span class="chk">✓</span></div>
-  <div class="mi" data-rate="+80%"><span>飞速</span><span class="chk">✓</span></div>
+  <div class="mi" data-rate="+20%"><span>1.2倍速（默认）</span><span class="chk">✓</span></div>
 </div>
 <div class="popmenu" id="effortmenu">
   <div class="mtitle">Effort</div>
@@ -1674,19 +1672,16 @@
   /* ── 语音通话v2：浏览器采音(自带回声消除)→桥接VAD/识别；
         常驻CLI进程流式生成，逐句取mp3连播；你插话即打断 ── */
   function curRate() {
-    var r = '+30%';
-    try { r = localStorage.getItem('ttsRate') || '+30%'; } catch (e) {}
-    return r;
+    var r = '+20%';
+    try { r = localStorage.getItem('ttsRate') || '+20%'; } catch (e) {}
+    return r === '+0%' ? '+0%' : '+20%';   // 只有两档：正常 / 1.2倍速
   }
   function curVoiceId() {
     // 嗓音是全局选项（存浏览器本地），不再绑定会话；旧版存过的在线嗓音id一律回落女声
     var v = '';
     try { v = localStorage.getItem('ttsVoice2') || ''; } catch (e) {}
-    if (v === 'local-male') return 'local-male';
-    if (v.indexOf('local:') === 0 && VOICE_OK[v]) return v;
-    return 'local-female';
+    return v === 'local-male' ? 'local-male' : 'local-female';
   }
-  var VOICE_OK = {};   // Mac 上桥接报上来的本机嗓音 id 表
   function pickVoice(vid) {
     // 只挑真正装在本机的嗓音（localService）。Edge 里的"Online (Natural)"在线嗓音
     // 会静默哑火（不出声、不报错），必须排除
@@ -1696,7 +1691,6 @@
     if (!vs.length) return null;
     var wants = vid === 'local-male'
       ? ['Kangkang', '康康', 'Eddy', 'Reed', 'Rocko']
-      : vid.indexOf('local:') === 0 ? [vid.slice(6).split(' (')[0]]
       : ['Huihui', '慧慧', 'Yaoyao', '瑶瑶', 'Tingting', '婷婷', 'Meijia', '美嘉'];
     for (var i = 0; i < wants.length; i++) {
       for (var j = 0; j < vs.length; j++) {
@@ -1732,7 +1726,24 @@
   }
   function rateNum() { return 1 + (parseInt(curRate(), 10) || 0) / 100; }
 
-  // 播一句：桥接合成（康康/慧慧）→ 音频元素播放；合成不可用时退回浏览器嗓音
+  /* Safari 只允许在用户点击的调用栈里开始播放；合成语音是点击之后异步到的，
+     直接 new Audio().play() 会被静默拒绝。办法：点击那一刻先让一个固定的 Audio
+     元素播一段静音把它"解锁"，之后所有句子都复用这个元素播。Chrome/Edge 无此限制，
+     照走同一条路也没坏处。 */
+  var SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';
+  var PLAYER = null;
+  function unlockAudio() {
+    if (!PLAYER) {
+      PLAYER = new Audio();
+      PLAYER.setAttribute('playsinline', '');
+    }
+    try {
+      PLAYER.src = SILENT_WAV;
+      var pr = PLAYER.play();
+      if (pr && pr.catch) pr.catch(function () {});
+    } catch (e) {}
+  }
+  // 播一句：桥接合成 → 复用已解锁的音频元素播放；合成不可用时退回浏览器嗓音
   function playSentence(text, done) {
     var my = ++WK.seq;
     var fired = false;
@@ -1745,10 +1756,20 @@
       return r.blob();
     }).then(function (b) {
       if (my !== WK.seq) { fin(); return; }   // 等音频的工夫已经被打断/停掉了
-      var a = new Audio(URL.createObjectURL(b));
+      var a = PLAYER || new Audio();
+      var url = URL.createObjectURL(b);
       WK.cur = a;
-      a.onended = a.onerror = fin;
-      a.play().catch(fin);
+      a.onended = function () { URL.revokeObjectURL(url); fin(); };
+      a.onerror = function () { URL.revokeObjectURL(url); fin(); };
+      a.src = url;
+      var pr = a.play();
+      if (pr && pr.catch) {
+        pr.catch(function () {
+          // 被浏览器拒绝（多半是 Safari 未解锁）：退回浏览器嗓音，至少出声
+          if (my !== WK.seq) { fin(); return; }
+          speakLocal(text, curVoiceId(), fin);
+        });
+      }
     }).catch(function () {
       if (my !== WK.seq) { fin(); return; }
       speakLocal(text, curVoiceId(), fin);
@@ -2017,7 +2038,9 @@
     loadSessions();
   }
   callbtn.addEventListener('click', function () {
-    if (WK.on) endWalkie(); else startWalkie();
+    if (WK.on) { endWalkie(); return; }
+    unlockAudio();             // 必须在点击的同步调用栈里做（Safari）
+    startWalkie();
   });
   /* 本机嗓音播报（试听用；通话走同一条 playSentence） */
   var ttsBusy = false;
@@ -2065,36 +2088,12 @@
       document.getElementById('vlabel-f').textContent = '本地' + (pf.voices['local-female'] || '女声');
       document.getElementById('vlabel-m').textContent = '本地' + (pf.voices['local-male'] || '男声');
     }
-    if (pf.voice_list && pf.voice_list.length) {
-      // Mac：默认只放女声/男声两项；其余系统嗓音收进「更多本机嗓音」里
-      var m = document.querySelector('#voicemenu .mi[data-voice="local-male"]');
-      var anchor = m.nextSibling;
-      var tg = document.createElement('div');
-      tg.className = 'mi'; tg.id = 'vmoretoggle';
-      tg.innerHTML = '<span>更多本机嗓音</span><span>›</span>';
-      var wrap = document.createElement('div');
-      wrap.id = 'vmorewrap'; wrap.style.display = 'none';
-      pf.voice_list.forEach(function (v) {
-        VOICE_OK[v.id] = 1;
-        var d = document.createElement('div');
-        d.className = 'mi'; d.dataset.voice = v.id;
-        d.innerHTML = '<span></span><span class="chk">✓</span>';
-        d.firstChild.textContent = v.label;
-        wrap.appendChild(d);
-      });
-      var tip = document.createElement('div');
-      tip.className = 'mtitle';
-      tip.textContent = '更多嗓音可在 系统设置 → 辅助功能 → 朗读内容 → 系统嗓音 里下载，重开软壳后出现';
-      tip.style.whiteSpace = 'normal';
-      wrap.appendChild(tip);
-      voicemenu.insertBefore(tg, anchor);
-      voicemenu.insertBefore(wrap, anchor);
-      // 上一版曾把默认自动改成 local:Tingting / local:Eddy，这里收回到女声/男声默认项
-      var cur = ''; try { cur = localStorage.getItem('ttsVoice2') || ''; } catch (e) {}
-      if (cur === 'local:Tingting') { try { localStorage.setItem('ttsVoice2', 'local-female'); } catch (e) {} }
-      if (cur.indexOf('local:Eddy') === 0) { try { localStorage.setItem('ttsVoice2', 'local-male'); } catch (e) {} }
-      paintVoiceMenu();
-    }
+    // 旧版存过的其他本机嗓音 id 一律收回到女声
+    try {
+      var cur0 = localStorage.getItem('ttsVoice2') || '';
+      if (cur0.indexOf('local:') === 0) localStorage.setItem('ttsVoice2', 'local-female');
+    } catch (e) {}
+    paintVoiceMenu();
   }).catch(function () {});
 
   /* 嗓音选择（点击即试听） */
@@ -2121,16 +2120,12 @@
     e.stopPropagation();
     var mi = e.target.closest('.mi');
     if (!mi) return;
+    if (!WK.on) unlockAudio();
     if (mi.dataset.rate !== undefined) {   // 调语速：立即试听新速度
       try { localStorage.setItem('ttsRate', mi.dataset.rate); } catch (e2) {}
       paintVoiceMenu();
       stopSpeak();
       speak('现在我用这个速度说话，你听听合不合拍。');
-      return;
-    }
-    if (mi.id === 'vmoretoggle') {
-      var vw = document.getElementById('vmorewrap');
-      vw.style.display = vw.style.display === 'none' ? '' : 'none';
       return;
     }
     if (mi.dataset.voice === undefined) return;

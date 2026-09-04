@@ -127,14 +127,22 @@ stickers/共享/无奈-扶额.jpg
 pip install sherpa-onnx
 ```
 
-2. 下载两个模型文件，放进软壳目录的 `voice/` 文件夹：
-   - [SenseVoice 识别模型](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2)（约250MB，解压后把里面的 `model.int8.onnx` 和 `tokens.txt` 放进 `voice/`）
+2. 下载三个模型文件，放进软壳目录的 `voice/` 文件夹（都是 sherpa-onnx 作者发布的官方文件）：
+   - [model.int8.onnx](https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/model.int8.onnx)（SenseVoice 识别模型，约240MB）
+   - [tokens.txt](https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/tokens.txt)（约300KB）
    - [silero_vad.onnx](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx)（约2MB，断句用）
+
+   > 也可以下 GitHub 上的[整包](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2)（约1GB，多出一个软壳用不到的全精度 `model.onnx`），解压后只取 `model.int8.onnx` 和 `tokens.txt`。
+   > 国内网速慢的话，用多线程下载工具分块下会快很多。
 3. 点📞开麦（首次会请求麦克风权限）。
 
 **热词纠正**：语音识别爱按词频抢答（比如把 Claude 听成 cloud）。第一次通话后 `voice/hotwords.txt` 会自动出现，每行一条「听错的词=>该是的词」，自己往里加就行，存盘即生效。
 
-**朗读嗓音**在底部状态栏「嗓音」里选，点击即试听，全局生效。只有两个本机嗓音：Windows 上是女声慧慧和男声康康，macOS 上是女声婷婷和男声 Eddy（系统 `say` 命令自带；「系统设置 → 辅助功能 → 朗读内容 → 系统嗓音」里可以下载音质更好的中文嗓音，软壳会自动选用），不联网、不下载、开箱即用。不用 Edge 的"在线自然嗓音"，是因为它们在部分网络环境下会静默哑火（不出声也不报错）；本机嗓音音质朴素，但稳。
+**朗读嗓音**在底部状态栏「嗓音」里选，点击即试听，全局生效。只有两个本机嗓音，语速两档（正常 / 1.2倍速）：
+- Windows：女声慧慧、男声康康，开箱即用。
+- macOS：推荐先去「系统设置 → 辅助功能 → 朗读内容 → 系统嗓音 → 管理嗓音」下载「黎潋（高级）」和「瀚（高级）」，软壳会自动选用它们；没下载的话退回系统自带的婷婷和 Eddy（音质较差）。
+
+macOS 上如果用 Safari 打开软壳，语音也能正常播放；装了 Chrome 或 Edge 会以独立窗口打开，体验更好。不用 Edge 的"在线自然嗓音"，是因为它们在部分网络环境下会静默哑火（不出声也不报错）；本机嗓音音质朴素，但稳。
 
 > 语音识别引擎为阿里 FunAudioLLM 团队开源的 SenseVoice-Small（FunASR Model License v1.1，允许商用、要求署名——特此致谢）。支持普通话、粤语、英语、日语、韩语。
 > 说明：回复速度取决于所选 Claude 模型的思考时长，体验更像对讲机而非电话——它听得快，想得没那么快。
