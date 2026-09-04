@@ -109,6 +109,14 @@ def find_browser():
 
 
 CLAUDE = find_claude()
+
+
+def claude_bin():
+    """启动时没找到 claude 的话，每次用到时再找一遍：用户常常先开软壳后装 CLI。"""
+    global CLAUDE
+    if not CLAUDE:
+        CLAUDE = find_claude()
+    return CLAUDE
 BROWSER = find_browser()
 PORT = 8618
 DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1523,7 +1531,7 @@ class Handler(BaseHTTPRequestHandler):
                             "key_mod": KEY_MOD,
                             "voices": VOICE_NAMES,
                             "sep": os.sep,
-                            "claude": bool(CLAUDE)},
+                            "claude": bool(claude_bin())},
                            ensure_ascii=False).encode("utf-8"),
                 "application/json; charset=utf-8",
                 {"Cache-Control": "no-store"},
@@ -1741,7 +1749,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if CALLP["proc"]:
                 call_stop_proc()
-            cmd = [CLAUDE, "-p", "--input-format", "stream-json",
+            cmd = [claude_bin(), "-p", "--input-format", "stream-json",
                    "--output-format", "stream-json", "--verbose",
                    "--include-partial-messages",
                    "--dangerously-skip-permissions"]
@@ -2455,14 +2463,14 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
 
-        if not CLAUDE:
+        if not claude_bin():
             self._emit({"kind": "error", "text":
                         "没找到 claude 命令。请先安装 Claude Code CLI："
                         + INSTALL_HINT})
             self._emit({"kind": "done"})
             return
 
-        base = [CLAUDE, "-p", "--output-format", "stream-json", "--verbose",
+        base = [claude_bin(), "-p", "--output-format", "stream-json", "--verbose",
                 "--include-partial-messages",
                 "--dangerously-skip-permissions"]
         mdl = sess.get("model") or ""
@@ -2611,7 +2619,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _run_member(self, member, prompt, rid):
         """跑一个群成员的一轮发言。返回 {text, sid, stopped, rc, err}"""
-        cmd = [CLAUDE, "-p", "--output-format", "stream-json", "--verbose",
+        cmd = [claude_bin(), "-p", "--output-format", "stream-json", "--verbose",
                "--dangerously-skip-permissions"]
         if valid_model(member.get("model") or ""):
             cmd += ["--model", member["model"]]
@@ -2738,7 +2746,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.emit_lock = threading.Lock()
-        if not CLAUDE:
+        if not claude_bin():
             self._emit({"kind": "error", "text":
                         "没找到 claude 命令。请先安装 Claude Code CLI："
                         + INSTALL_HINT})
