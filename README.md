@@ -75,7 +75,7 @@ cd softshell
 python3 bridge.py
 ```
 
-之后想再开，在 Finder 里双击 `Softshell.command` 就行（首次可能被系统拦下：右键 → 打开）。它会在后台起服务并弹出聊天窗口，再次双击只会重新打开窗口，不会重复起服务。想彻底退出，在活动监视器里结束 Python，或终端里 `pkill -f bridge.py`。
+之后想再开，在 Finder 里双击 `Softshell.app` 就行（不弹终端窗口，可直接拖进程序坞；首次可能被系统拦下：右键 → 打开）。也可以双击 `Softshell.command`，效果一样但会闪一下终端窗口。它会在后台起服务并弹出聊天窗口，再次双击只会重新打开窗口，不会重复起服务。想彻底退出，在活动监视器里结束 Python，或终端里 `pkill -f bridge.py`。
 
 > macOS 自带的 `python3` 就够用（3.8+）。装了 Chrome 或 Edge 会以无地址栏的独立窗口打开，没装就用 Safari 打开（带地址栏，功能一样）。
 > 想在桌面放个入口：把 `Softshell.command` 拖到 Dock 右侧或做个替身放桌面。
