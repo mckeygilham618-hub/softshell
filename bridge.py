@@ -188,69 +188,81 @@ LAST_LOOK_SIG = {}
 
 # 朗读嗓音：只存在浏览器里，前端每条消息随身带 voice 字段；
 # 和外观一样，换过的那一轮追加一行回读，其余轮次不加。
-def _mac_voices():
-    """macOS `say` 自带的中文嗓音：女声优先婷婷，男声挑一个 zh_CN 男声。
-    返回 {"female": 完整嗓音名, "male": 完整嗓音名}，找不到就是空串。"""
+_MAC_ZH = None   # [(完整嗓音名, 语种, 中文名)]，扫一次
+
+
+def _mac_scan():
+    """扫 `say -v ?` 里的中文嗓音。中文名从示例句「你好！我叫瀚。」里取。"""
+    global _MAC_ZH
+    if _MAC_ZH is not None:
+        return _MAC_ZH
+    _MAC_ZH = []
     try:
         out = subprocess.run(["say", "-v", "?"], capture_output=True, text=True,
                              timeout=10).stdout
     except (OSError, subprocess.SubprocessError):
-        return {"female": "", "male": ""}
-    zh = []
+        return _MAC_ZH
     for ln in out.splitlines():
-        m = re.match(r"^(.*?)\s{2,}(zh_[A-Z]{2})\s", ln)
-        if m:
-            zh.append((m.group(1).strip(), m.group(2)))
+        m = re.match(r"^(.*?)\s{2,}((?:zh|yue)_[A-Z]{2})\s+#\s*(.*)$", ln)
+        if not m:
+            continue
+        name, lang, sample = m.group(1).strip(), m.group(2), m.group(3)
+        cn = re.search(r"我叫\s*(.+?)\s*[。.!！]", sample)
+        head = name.split("(")[0].strip()
+        label = cn.group(1) if cn else head
+        if label.lower() == head.lower():      # 没有中文名的（Eddy/Flo…）就用英文
+            label = head
+        _MAC_ZH.append((name, lang, label))
+    return _MAC_ZH
+
+
+def _mac_voices():
+    """挑默认的女声/男声：优先系统设置里下载的高级/增强嗓音（黎潋、瀚），
+    其次婷婷/Eddy。返回 {"female": 完整嗓音名, "male": 完整嗓音名}。"""
+    zh = _mac_scan()
 
     def pick(wants):
         for w in wants:
-            for name, _lang in zh:
+            for name, _lang, _cn in zh:
                 if name.startswith(w):
                     return name
-        for name, lang in zh:
+        for name, lang, _cn in zh:
             if lang == "zh_CN":
                 return name
         return zh[0][0] if zh else ""
 
-    return {"female": pick(["Tingting", "婷婷", "Meijia", "美嘉", "Sinji"]),
-            "male": pick(["Eddy", "Reed", "Rocko", "Grandpa"])}
+    return {"female": pick(["Lilian", "Tingting (Premium)", "Tingting (Enhanced)",
+                            "Lili", "Tingting", "Meijia", "Sinji"]),
+            "male": pick(["Han", "Binbin", "Eddy", "Reed", "Rocko", "Grandpa"])}
 
 
 def _voice_label(full):
-    """嗓音展示名：Tingting→婷婷，'Eddy (中文（中国大陆）)'→Eddy。"""
+    """嗓音展示名：'Lilian (Premium)'→黎潋，'Eddy (中文（中国大陆）)'→Eddy。"""
     if not full:
         return "无"
-    head = full.split("(")[0].strip()
-    return {"Tingting": "婷婷", "Meijia": "美嘉", "Sinji": "善怡"}.get(head, head)
+    for name, _lang, cn in _mac_scan():
+        if name == full:
+            return cn
+    return full.split("(")[0].strip()
 
 
-def _mac_voice_list():
-    """macOS 上装着的全部中文嗓音（普通话/台湾/粤语），给前端菜单用。
+def _mac_voice_list(exclude=()):
+    """macOS 上装着的其余中文嗓音（普通话/台湾/粤语），给「更多本机嗓音」用。
     id 形如 local:Tingting；同名不同语种保留各自完整名。"""
-    try:
-        out = subprocess.run(["say", "-v", "?"], capture_output=True, text=True,
-                             timeout=10).stdout
-    except (OSError, subprocess.SubprocessError):
-        return []
     lst, seen = [], set()
-    for ln in out.splitlines():
-        m = re.match(r"^(.*?)\s{2,}((?:zh|yue)_[A-Z]{2})\s", ln)
-        if not m:
-            continue
-        name, lang = m.group(1).strip(), m.group(2)
-        if name in seen:
+    for name, lang, cn in _mac_scan():
+        if name in seen or name in exclude:
             continue
         seen.add(name)
         region = {"zh_CN": "普通话", "zh_TW": "台湾", "zh_HK": "粤语", "yue_CN": "粤语"}.get(lang, lang)
-        lst.append({"id": "local:" + name, "label": _voice_label(name) + "（" + region + "）",
-                    "lang": lang})
+        lst.append({"id": "local:" + name, "label": cn + "（" + region + "）", "lang": lang})
     order = {"zh_CN": 0, "zh_TW": 1, "zh_HK": 2, "yue_CN": 2}
     lst.sort(key=lambda v: (order.get(v["lang"], 9), v["label"]))
     return lst
 
 
 MAC_VOICES = _mac_voices() if IS_MAC else {"female": "", "male": ""}
-MAC_VOICE_LIST = _mac_voice_list() if IS_MAC else []
+MAC_VOICE_LIST = _mac_voice_list(exclude=set(MAC_VOICES.values())) if IS_MAC else []
 MAC_VOICE_IDS = {v["id"]: v for v in MAC_VOICE_LIST}
 LOCAL_TTS_LABEL = OS_LABEL + " 本机"
 if IS_MAC:

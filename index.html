@@ -2061,36 +2061,39 @@
   })();
   fetch('/platform').then(function (r) { return r.json(); }).then(function (pf) {
     if (pf.sep) PSEP = pf.sep;
+    if (pf.voices) {
+      document.getElementById('vlabel-f').textContent = '本地' + (pf.voices['local-female'] || '女声');
+      document.getElementById('vlabel-m').textContent = '本地' + (pf.voices['local-male'] || '男声');
+    }
     if (pf.voice_list && pf.voice_list.length) {
-      // Mac：把两个固定项换成系统装着的全部中文嗓音
-      var f = document.querySelector('#voicemenu .mi[data-voice="local-female"]');
+      // Mac：默认只放女声/男声两项；其余系统嗓音收进「更多本机嗓音」里
       var m = document.querySelector('#voicemenu .mi[data-voice="local-male"]');
       var anchor = m.nextSibling;
-      f.remove(); m.remove();
+      var tg = document.createElement('div');
+      tg.className = 'mi'; tg.id = 'vmoretoggle';
+      tg.innerHTML = '<span>更多本机嗓音</span><span>›</span>';
+      var wrap = document.createElement('div');
+      wrap.id = 'vmorewrap'; wrap.style.display = 'none';
       pf.voice_list.forEach(function (v) {
         VOICE_OK[v.id] = 1;
         var d = document.createElement('div');
         d.className = 'mi'; d.dataset.voice = v.id;
         d.innerHTML = '<span></span><span class="chk">✓</span>';
         d.firstChild.textContent = v.label;
-        voicemenu.insertBefore(d, anchor);
+        wrap.appendChild(d);
       });
       var tip = document.createElement('div');
       tip.className = 'mtitle';
-      tip.textContent = '更好听的嗓音：系统设置 → 辅助功能 → 朗读内容 → 系统嗓音 → 管理嗓音，下载「增强」「高级」版后重开软壳';
+      tip.textContent = '更多嗓音可在 系统设置 → 辅助功能 → 朗读内容 → 系统嗓音 里下载，重开软壳后出现';
       tip.style.whiteSpace = 'normal';
-      voicemenu.insertBefore(tip, anchor);
-      // 旧存的 local-female/local-male 映射到婷婷 / 第一个男声
+      wrap.appendChild(tip);
+      voicemenu.insertBefore(tg, anchor);
+      voicemenu.insertBefore(wrap, anchor);
+      // 上一版曾把默认自动改成 local:Tingting / local:Eddy，这里收回到女声/男声默认项
       var cur = ''; try { cur = localStorage.getItem('ttsVoice2') || ''; } catch (e) {}
-      if (!VOICE_OK[cur]) {
-        var want = cur === 'local-male' ? 'local:Eddy' : 'local:Tingting';
-        var pick = pf.voice_list.filter(function (v) { return v.id.indexOf(want) === 0; })[0] || pf.voice_list[0];
-        try { localStorage.setItem('ttsVoice2', pick.id); } catch (e) {}
-      }
+      if (cur === 'local:Tingting') { try { localStorage.setItem('ttsVoice2', 'local-female'); } catch (e) {} }
+      if (cur.indexOf('local:Eddy') === 0) { try { localStorage.setItem('ttsVoice2', 'local-male'); } catch (e) {} }
       paintVoiceMenu();
-    } else if (pf.voices) {
-      document.getElementById('vlabel-f').textContent = '本地' + (pf.voices['local-female'] || '女声');
-      document.getElementById('vlabel-m').textContent = '本地' + (pf.voices['local-male'] || '男声');
     }
   }).catch(function () {});
 
@@ -2123,6 +2126,11 @@
       paintVoiceMenu();
       stopSpeak();
       speak('现在我用这个速度说话，你听听合不合拍。');
+      return;
+    }
+    if (mi.id === 'vmoretoggle') {
+      var vw = document.getElementById('vmorewrap');
+      vw.style.display = vw.style.display === 'none' ? '' : 'none';
       return;
     }
     if (mi.dataset.voice === undefined) return;
