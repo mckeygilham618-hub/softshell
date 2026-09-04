@@ -302,17 +302,21 @@ def intro_text(skey, vid="local-female"):
         "代码块、表格和列表，但更适合短句分段的聊天式表达。\n"
         "【界面功能】用户问起时你要答得上来：左侧栏可开多个会话、可拉群聊"
         "（选型号和数量建群，群里@成员名字点名发言）；右键会话名可以改名、置顶、导出聊天记录"
-        "（md文件，存到软壳目录的exports文件夹）、删除；标题栏🔍搜索本会话"
+        "（md文件，存到软壳目录的exports文件夹）、删除单个会话，以及一键清空所有会话"
+        "（连聊天档案一起删，只留一个新空会话）；标题栏🔍搜索本会话"
         "聊天记录（全文/图片与表情包/链接/文件路径四类）；运行中按Esc或■随时打断；"
         "发图用📎按钮或" + KEY_MOD + "+V粘贴；状态栏右侧的模型/effort按钮可切换（下一条消息生效），"
         "状态栏左侧显示的是每轮token消耗（只是数字，不可点）；"
         "聊天记录自动留档在本地，重开窗口自动回放。\n"
-        "【语音对讲】标题栏📞是对讲机模式（可选件，装好识别模型才能用）：用户点一下开麦"
-        "直接说话，说完停顿自动发送并闭麦；你的回复会被逐句念出来，念完自动再开麦；"
-        "你念的时候用户一开口你就会被打断；再点📞关掉。对讲时没有单独页面，"
+        "【语音模式】标题栏📞点开是两种语音模式（可选件，装好识别模型才能用），用户自己选："
+        "①「语音输入」——只把用户的话转成文字发给你，你的回复不朗读，用户用眼睛看，"
+        "相当于替他省去打字，所以这个模式下你照常排版、该多长就多长；"
+        "②「对讲机」——用户语音说、你的回复被逐句念出来，适合用户正在看别的软件、"
+        "不盯着聊天窗的场景；念的时候用户一开口你就会被打断。"
+        "两种都是点一下开麦、说完停顿自动发送并闭麦，再点📞关掉。语音模式没有单独页面，"
         "双方的话都以普通气泡出现在聊天窗里。语音识别（SenseVoice）和朗读都在用户本机"
-        "离线完成。朗读嗓音只有两个 " + LOCAL_TTS_LABEL + "嗓音：" + VOICE_NAMES["local-female"] +
-        "和" + VOICE_NAMES["local-male"] + "，"
+        "离线完成。朗读嗓音（只在对讲机模式下用得上）只有两个 " + LOCAL_TTS_LABEL +
+        "嗓音：" + VOICE_NAMES["local-female"] + "和" + VOICE_NAMES["local-male"] + "，"
         "用户在状态栏「嗓音」里选（点击即试听），全局生效；"
         "嗓音换了会告诉你。" + voice_state_line(vid) + "\n"
         "【表情包】" + STICKER_DIR + " 文件夹里放着表情包，用到时再翻看即可。"
@@ -875,7 +879,7 @@ def _resample_to_16k(samples, sr):
     x_new = np.linspace(0.0, 1.0, num=n, endpoint=False)
     return np.interp(x_new, x_old, samples).astype(np.float32)
 CALLP = {"proc": None, "skey": "", "reader": None, "events": [],
-         "turn": 0, "sid": None, "lock": threading.Lock()}
+         "turn": 0, "sid": None, "mode": "talk", "lock": threading.Lock()}
 SENT_SPLIT_RE = re.compile(r"[^。！？!?\n；;]*[。！？!?\n；;]+")
 CALL_HINT = (
     "(语音对讲模式：用户开了📞对讲机，正对着麦克风跟你说话，"
@@ -887,6 +891,15 @@ CALL_HINT = (
     "③用户的话是语音转文字来的，会出现吃字、错别字、同音字、重复字——"
     "先按上下文猜最合理的意思，拿不准就直接跟用户确认，不要瞎脑补；"
     "④听不懂就问。)"
+)
+DICTATE_HINT = (
+    "(语音输入模式：用户开了🎙语音输入，正对着麦克风说话，"
+    "但你的回复不会被念出来——用户是用眼睛看的。"
+    "①所以照常按聊天窗口的规矩排版：可以分段、列表、代码块、表情包，"
+    "该多长就多长，不必迁就朗读；"
+    "②用户的话是语音转文字来的，会出现吃字、错别字、同音字、重复字——"
+    "先按上下文猜最合理的意思，拿不准就直接跟用户确认，不要瞎脑补；"
+    "③听不懂就问。)"
 )
 CALL_ENDED = set()   # 挂断过电话的会话：下一条文字消息告知它已回到打字聊天
 
@@ -1836,6 +1849,7 @@ class Handler(BaseHTTPRequestHandler):
                     ensure_ascii=False).encode("utf-8"),
                     "application/json; charset=utf-8")
                 return
+            mode = "dictate" if str(p.get("mode") or "") == "dictate" else "talk"
             if CALLP["proc"]:
                 call_stop_proc()
             cmd = [claude_bin(), "-p", "--input-format", "stream-json",
@@ -1844,7 +1858,13 @@ class Handler(BaseHTTPRequestHandler):
                    "--dangerously-skip-permissions"]
             if valid_model(sess.get("model") or ""):
                 cmd += ["--model", sess["model"]]
-            cmd += ["--effort", "low"]   # 通话要的是秒回：模型照用户选的，effort一律low
+            # 对讲要的是秒回，effort 一律 low；语音输入是用眼睛看的，照用户选的档位跑
+            if mode == "dictate":
+                eff0 = sess.get("effort") or ""
+                if eff0 in EFFORTS:
+                    cmd += ["--effort", eff0]
+            else:
+                cmd += ["--effort", "low"]
             if sess.get("sid"):
                 cmd += ["--resume", sess["sid"]]
             try:
@@ -1863,6 +1883,7 @@ class Handler(BaseHTTPRequestHandler):
             CALLP["skey"] = sess["key"]
             CALLP["turn"] = 0
             CALLP["sid"] = sess.get("sid") or None
+            CALLP["mode"] = mode
             with VOICE["lock"]:
                 VOICE["queue"] = []
             VOICE["err"] = ""
@@ -1892,7 +1913,10 @@ class Handler(BaseHTTPRequestHandler):
             if CALLP["turn"] == 0:
                 if not CALLP.get("sid"):
                     send_text += "\n\n" + intro_text(skey, vid)   # 新会话链的开场白
-                send_text += "\n\n" + CALL_HINT              # 每次开麦的第一句都带
+                # 每次开麦的第一句都带：告诉它这轮是念出来还是给人看的
+                send_text += "\n\n" + (DICTATE_HINT
+                                       if CALLP.get("mode") == "dictate"
+                                       else CALL_HINT)
             vchg = voice_change_text(skey, vid)
             if vchg:
                 send_text += "\n\n" + vchg
@@ -2169,6 +2193,28 @@ class Handler(BaseHTTPRequestHandler):
                 d = load_sessions()
                 e = new_session_entry()
                 d["list"].insert(0, e)
+                d["active"] = e["key"]
+                save_sessions(d)
+            self._send_bytes(json.dumps(e, ensure_ascii=False).encode("utf-8"),
+                             "application/json; charset=utf-8")
+            return
+        if self.path == "/session/delete_all":
+            # 一键清空：所有会话连同它们的聊天档案、群转录、外观文件一起删，
+            # 只留一个全新的空会话。Claude Code 那边的会话档案不动。
+            if CALLP["proc"]:
+                call_stop_proc()
+            with SESS_LOCK:
+                d = load_sessions()
+                for s0 in d["list"]:
+                    k0 = s0.get("key") or ""
+                    for pth in (look_path(k0), group_log_path(k0), history_path(k0)):
+                        if pth and os.path.exists(pth):
+                            try:
+                                os.remove(pth)
+                            except OSError:
+                                pass
+                e = new_session_entry()
+                d["list"] = [e]
                 d["active"] = e["key"]
                 save_sessions(d)
             self._send_bytes(json.dumps(e, ensure_ascii=False).encode("utf-8"),
@@ -2531,7 +2577,7 @@ class Handler(BaseHTTPRequestHandler):
             text += "\n\n" + stk_warn_text(bad_prev)
         if skey in CALL_ENDED:
             CALL_ENDED.discard(skey)
-            text += "\n\n(刚才的语音对讲已关闭，现在回到文字聊天，可以正常排版。)"
+            text += "\n\n(刚才的语音模式已关闭，现在回到打字聊天。)"
         cur_sig = look_state_line(skey)
         if not sid:
             text += "\n\n" + intro_text(skey, vid)
