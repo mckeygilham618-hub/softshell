@@ -313,7 +313,6 @@
   }
   .popmenu.open { display: block; }
   #voicemenu { max-height: 72vh; overflow-y: auto; }
-  #callmenu { right: auto; left: 8px; min-width: 240px; }   /* bottom 由 JS 贴着📞算 */
   .mtitle { font-size: 12px; color: #999; padding: 4px 12px 2px; font-weight: 600; }
   .mi {
     display: flex; justify-content: space-between; align-items: center;
@@ -398,7 +397,7 @@
 <footer>
   <button id="emobtn" title="表情和表情包">😀</button>
   <button id="attach" title="发图片（也可以直接Ctrl+V粘贴截图）">📎</button>
-  <button id="callbtn" title="语音模式：点开选「语音输入」或「对讲机」">📞</button>
+  <button id="callbtn" title="对讲机模式：点一下开麦，说完自动发送；回复念完自动再开麦；念的时候你一开口它就停">📞</button>
   <input id="file" type="file" accept="image/*" multiple style="display:none">
   <textarea id="input" placeholder="说话（Enter换行，Ctrl+Enter发送，Ctrl+V可贴图）"></textarea>
   <button id="send">发送</button>
@@ -422,11 +421,6 @@
     <div class="mi" data-model="claude-sonnet-4-6"><span>Sonnet 4.6</span><span class="chk">✓</span></div>
     <div class="mi" data-model="opusplan"><span>OpusPlan<span class="num">（Opus规划+Sonnet执行）</span></span><span class="chk">✓</span></div>
   </div>
-</div>
-<div class="popmenu" id="callmenu">
-  <div class="mtitle">语音模式 · 点一下开麦，说完停顿自动发送</div>
-  <div class="mi" data-call="dictate"><span>🎙 语音输入<span class="num">　回复不朗读，用眼睛看</span></span></div>
-  <div class="mi" data-call="talk"><span>📞 对讲机<span class="num">　回复念出来，可以不看屏幕</span></span></div>
 </div>
 <div class="popmenu" id="voicemenu">
   <div class="mtitle">朗读嗓音 · 全局生效（点击即试听）</div>
@@ -1731,15 +1725,13 @@
     t = t.replace(/[*#>`|~_]{1,}/g, '');
     return t;
   }
-  /* ── 语音模式：点📞选一种，两种共用同一套开麦/断句/发送逻辑，只差回复念不念。
-        · 语音输入（WK.speak=false）：只替你省打字，回复照常上屏，你用眼睛看。
-        · 对讲机（WK.speak=true）：回复逐句念出来，适合不盯屏幕；念的时候麦克风也开着，
-          识别到你的声音就立刻停念，直接进入听你说。
+  /* ── 对讲机模式：点📞开麦 → 你说完自动闭麦、发送 → Claude回复逐句念 → 念完自动开麦。
+        念的时候麦克风也开着：识别到你的声音就立刻停念，直接进入听你说。
         闭麦是逻辑闭麦：麦克风通道常开（缩小窗口不会被浏览器节流），只是不收结果。
         朗读由桥接合成、浏览器播放，这样浏览器的回声消除才能减掉它自己的声音 ── */
   var callbtn = document.getElementById('callbtn');
   var voicestate = document.getElementById('voicestate');
-  var WK = { on: false, speak: true, mode: '', ac: null, node: null, stream: null,
+  var WK = { on: false, mode: '', ac: null, node: null, stream: null,
              spT: null, evT: null, turn: 0, queue: [], playing: false, cur: null,
              seq: 0, sentAt: 0, turnAudio: false, turnDone: true, interrupted: -1,
              fillerPlayedTurn: -1, wd: null, typing: null, live: null,
@@ -1748,8 +1740,7 @@
   function wkState(mode) {
     WK.mode = mode;
     voicestate.textContent = mode === 'listen' ? '🎙 在听'
-      : mode === 'muted' ? (WK.speak ? '🔇 在想' : '✍️ 在答')
-      : mode === 'speak' ? '🔊 在念' : '';
+      : mode === 'muted' ? '🔇 在想' : mode === 'speak' ? '🔊 在念' : '';
   }
   function rateNum() { return 1 + (parseInt(curRate(), 10) || 0) / 100; }
 
@@ -1943,7 +1934,7 @@
   async function pumpEvents() {
     if (!WK.on) return;
     // 等太久还没出声：放一句垫音词稳住场（每轮最多一次；此时闭麦，不会录回去）
-    if (WK.speak && WK.mode === 'muted' && WK.sentAt && !WK.turnAudio && !WK.playing &&
+    if (WK.mode === 'muted' && WK.sentAt && !WK.turnAudio && !WK.playing &&
         WK.fillerPlayedTurn !== WK.turn && Date.now() - WK.sentAt > 2500) playFiller();
     try {
       var j = await (await fetch('/call/events')).json();
@@ -1955,7 +1946,6 @@
           if (!WK.live) WK.live = bubble('bot', '');
           WK.live.querySelector('.bubble').textContent += ev.text;
           keepTypingLast();
-          if (!WK.speak) return;                   // 语音输入模式：只上屏，不念
           if (WK.interrupted === ev.turn) return;   // 被打断的轮次：只显示不念
           WK.queue.push(ev.text);
           playNext();
@@ -1981,18 +1971,17 @@
     } catch (e) {}
   }
 
-  async function startWalkie(speak) {
+  async function startWalkie() {
     if (busyNow()) return;
-    var what = speak ? '对讲机' : '语音输入';
     var st;
     try {
       st = await (await fetch('/call/start', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: SKEY, mode: speak ? 'talk' : 'dictate' })
+        body: JSON.stringify({ key: SKEY })
       })).json();
-    } catch (e) { chip(what + '没起来：桥接没响应'); return; }
+    } catch (e) { chip('对讲机没起来：桥接没响应'); return; }
     if (!st.ok) {
-      chip(what + '没起来：' + ((st.missing || []).map(esc).join('；') || esc(st.err || '')));
+      chip('对讲机没起来：' + ((st.missing || []).map(esc).join('；') || esc(st.err || '')));
       return;
     }
     try {
@@ -2039,7 +2028,6 @@
     src.connect(WK.node);
     WK.node.connect(WK.ac.destination);
     WK.on = true;
-    WK.speak = !!speak;
     WK.turn = 0;
     WK.queue = [];
     WK.sentAt = 0;
@@ -2050,8 +2038,7 @@
     WK.typing = null;
     WK.live = null;
     callbtn.classList.add('oncall');
-    chip(speak ? '📞 对讲机开了：直接说，说完停一下就发出去，回复会念给你听；再点📞关掉'
-               : '🎙 语音输入开了：直接说，说完停一下就发出去，回复不朗读，用眼睛看；再点📞关掉');
+    chip('🎙 对讲机开了：直接说，说完停一下就发出去；再点📞关掉');
     openMic();
     WK.spT = setInterval(pumpUserSpeech, 300);
     WK.evT = setInterval(pumpEvents, 300);
@@ -2082,27 +2069,10 @@
     updateWordCount();
     loadSessions();
   }
-  var callmenu = document.getElementById('callmenu');
-  callbtn.addEventListener('click', function (e) {
-    e.stopPropagation();
+  callbtn.addEventListener('click', function () {
     if (WK.on) { endWalkie(); return; }
-    var was = callmenu.classList.contains('open');
-    closeMenus();
-    if (was) return;
-    // 贴在📞正上方：输入框会随内容长高，写死 bottom 会压住footer
-    var r = callbtn.getBoundingClientRect();
-    callmenu.style.bottom = Math.max(8, window.innerHeight - r.top + 6) + 'px';
-    callmenu.classList.add('open');
-  });
-  callmenu.addEventListener('click', function (e) {
-    e.stopPropagation();
-    var mi = e.target.closest('.mi');
-    if (!mi || mi.dataset.call === undefined) return;
-    closeMenus();
-    var speak = mi.dataset.call === 'talk';
-    // Safari 只认点击调用栈里的 play()：要念的模式必须在这里先解锁音频
-    if (speak) unlockAudio();
-    startWalkie(speak);
+    unlockAudio();             // 必须在点击的同步调用栈里做（Safari）
+    startWalkie();
   });
   /* 本机嗓音播报（试听用；通话走同一条 playSentence） */
   var ttsBusy = false;
@@ -2227,7 +2197,6 @@
     modelmenu.classList.remove('open');
     effortmenu.classList.remove('open');
     document.getElementById('voicemenu').classList.remove('open');
-    document.getElementById('callmenu').classList.remove('open');
     document.getElementById('gmenu').classList.remove('open');
     document.getElementById('morewrap').style.display = 'none';
   }
