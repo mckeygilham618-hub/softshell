@@ -1731,6 +1731,33 @@
         朗读由桥接合成、浏览器播放，这样浏览器的回声消除才能减掉它自己的声音 ── */
   var callbtn = document.getElementById('callbtn');
   var voicestate = document.getElementById('voicestate');
+  /* 系统语音识别（只在软壳自带的 macOS 原生窗口里有）：把浏览器已经消过回声的 PCM
+     递给 Speech.framework 的本机离线识别，省掉下 SenseVoice 模型那一步。
+     浏览器里打开时这个通道不存在，照旧走 /voice/feed + sherpa。 */
+  var NASR = (function () {
+    var mh = window.webkit && window.webkit.messageHandlers &&
+             window.webkit.messageHandlers.asr;
+    if (!window.__asrNative || !mh) return null;
+    var st = { text: '', ready: false, err: '' };
+    function send(o) { try { mh.postMessage(o); } catch (e) {} }
+    window.__asrEvent = function (ev) {
+      if (!ev) return;
+      if (ev.type === 'text') st.text = ev.text || '';
+      else if (ev.type === 'ready') { st.ready = true; st.err = ''; }
+      else if (ev.type === 'error') { st.err = ev.msg || '识别没起来'; }
+    };
+    st.start = function () { st.text = ''; st.err = ''; st.ready = false; send({ cmd: 'start', locale: 'zh-CN' }); };
+    st.reset = function () { st.text = ''; send({ cmd: 'reset' }); };
+    st.stop  = function () { st.text = ''; st.ready = false; send({ cmd: 'stop' }); };
+    // 8KB 一块，btoa 一次就够，不必分段
+    st.feed = function (i16, sr) {
+      var u8 = new Uint8Array(i16.buffer, i16.byteOffset, i16.byteLength);
+      var b = '';
+      for (var i = 0; i < u8.length; i++) b += String.fromCharCode(u8[i]);
+      send({ cmd: 'feed', pcm: btoa(b), sr: sr });
+    };
+    return st;
+  })();
   var WK = { on: false, mode: '', ac: null, node: null, stream: null,
              spT: null, evT: null, turn: 0, queue: [], playing: false, cur: null,
              seq: 0, sentAt: 0, turnAudio: false, turnDone: true, interrupted: -1,
@@ -1835,10 +1862,11 @@
     if (!WK.on) return;
     if (WK.turnDone) openMic(); else wkState('muted');
   }
-  function openMic() {
+  function openMic(keepAsr) {
     WK.gateT = Date.now() + 300;   // 留 0.3 秒让扬声器余音散掉，期间的识别结果不要
     WK.pending = '';
     WK.pendingT = 0;
+    if (NASR && !keepAsr) NASR.reset();
     wkState('listen');
   }
 
@@ -1865,8 +1893,45 @@
     startStatus(WK.typing.querySelector('.dots'));
   }
 
+  // 原生识别：系统回吐的是「本句到目前为止的完整转写」，会随着说下去自我修订，
+  // 所以是替换 WK.pending 而不是往后拼；断句仍旧靠下面那套停顿宽限。
+  async function pumpUserSpeechNative() {
+    if (NASR.err) { chip('语音故障：' + esc(NASR.err)); endWalkie(); return; }
+    var t = (NASR.text || '').trim();
+    if (WK.mode === 'muted') return;              // 逻辑闭麦：收到也不要
+    if (WK.mode === 'speak') {
+      if (!t) return;
+      if (t.replace(/[，。！？!?、\s]/g, '').length < 2) return;   // 碎音不算打断
+      stopPlayback();
+      WK.interrupted = WK.turn;
+      openMic(true);            // 留住转写：这句就是你新发言的开头
+      WK.gateT = 0;
+      WK.pending = t;
+      WK.pendingT = Date.now();
+      voicestate.textContent = '🎙 在听：' + t.slice(-20);
+      return;
+    }
+    if (WK.mode !== 'listen') return;
+    if (t && t !== WK.pending) {
+      if (Date.now() < WK.gateT) { NASR.reset(); return; }   // 开麦前的扬声器余音
+      WK.pending = t;
+      WK.pendingT = Date.now();
+      voicestate.textContent = '🎙 在听：' + t.slice(-20);
+      return;
+    }
+    if (!WK.pending) return;
+    var grace = /[。！？!?]\s*$/.test(WK.pending) ? 900 : 1800;
+    if (Date.now() - WK.pendingT < grace) return;
+    if (!WK.turnDone) return;
+    var msg = WK.pending;
+    WK.pending = '';
+    NASR.reset();
+    await walkieSend(msg);
+  }
+
   async function pumpUserSpeech() {
     if (!WK.on) return;
+    if (NASR) { await pumpUserSpeechNative(); return; }
     try {
       var j = await (await fetch('/voice/poll')).json();
       if (j.err) { chip('语音故障：' + esc(j.err)); endWalkie(); return; }
@@ -1977,12 +2042,26 @@
     try {
       st = await (await fetch('/call/start', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: SKEY })
+        body: JSON.stringify({ key: SKEY, asr: NASR ? 'native' : 'sherpa' })
       })).json();
     } catch (e) { chip('对讲机没起来：桥接没响应'); return; }
     if (!st.ok) {
       chip('对讲机没起来：' + ((st.missing || []).map(esc).join('；') || esc(st.err || '')));
       return;
+    }
+    if (NASR) {
+      // 首次会弹系统「语音识别」授权窗，用户可能要想一会儿，等久一点；
+      // 没等到也不硬拦，识别就绪之前喂进去的音会被丢掉，最多是第一句要重说
+      NASR.start();
+      for (var w = 0; w < 240 && !NASR.ready && !NASR.err; w++) {
+        if (w === 8) chip('等系统的语音识别授权……（弹窗点允许）');
+        await new Promise(function (ok) { setTimeout(ok, 250); });
+      }
+      if (NASR.err) {
+        chip('系统语音识别没起来：' + esc(NASR.err));
+        fetch('/call/stop', { method: 'POST' }).catch(function () {});
+        return;
+      }
     }
     try {
       WK.stream = await navigator.mediaDevices.getUserMedia({ audio: {
@@ -2021,6 +2100,7 @@
         var s = Math.max(-1, Math.min(1, f[i]));
         i16[i] = s < 0 ? s * 32768 : s * 32767;
       }
+      if (NASR) { NASR.feed(i16, SR); return; }   // 原生识别：直接递进系统，不过桥接
       backlog.push(i16);
       if (backlog.length > 80) backlog.shift();   // 桥接卡死超过 20 秒才开始丢
       flushFeed();
@@ -2053,6 +2133,7 @@
     if (WK.evT) clearInterval(WK.evT);
     stopPlayback();
     stopStatus();
+    if (NASR) NASR.stop();
     if (WK.typing) { WK.typing.remove(); WK.typing = null; }
     WK.live = null;
     if (!WK.turnDone) { WK.turnDone = true; setBusy(false); }

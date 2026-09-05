@@ -5,7 +5,8 @@ cd "$(dirname "$0")"
 OUT="../SoftshellWindow.app"
 rm -rf "$OUT"
 mkdir -p "$OUT/Contents/MacOS" "$OUT/Contents/Resources"
-swiftc -O -framework Cocoa -framework WebKit -o "$OUT/Contents/MacOS/SoftshellWindow" SoftshellWindow.swift
+swiftc -O -framework Cocoa -framework WebKit -framework Speech -framework AVFoundation \
+  -o "$OUT/Contents/MacOS/SoftshellWindow" SoftshellWindow.swift
 cat > "$OUT/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -21,6 +22,7 @@ cat > "$OUT/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>语音对讲需要用麦克风听你说话。</string>
+  <key>NSSpeechRecognitionUsageDescription</key><string>语音对讲用系统自带的本机听写把你的话转成文字，全程在本机完成、不上传。</string>
   <key>NSCameraUsageDescription</key><string>网页请求摄像头时使用。</string>
   <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict></plist>

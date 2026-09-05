@@ -308,7 +308,9 @@ def intro_text(skey, vid="local-female"):
         "发图用📎按钮或" + KEY_MOD + "+V粘贴；状态栏右侧的模型/effort按钮可切换（下一条消息生效），"
         "状态栏左侧显示的是每轮token消耗（只是数字，不可点）；"
         "聊天记录自动留档在本地，重开窗口自动回放。\n"
-        "【语音对讲】标题栏📞是对讲机模式（可选件，装好识别模型才能用）：用户点一下开麦"
+        "【语音对讲】标题栏📞是对讲机模式（" + (
+            "用软壳自带的原生窗口打开就能用，识别走 macOS 系统自带的本机听写，不用另外下模型"
+            if IS_MAC else "可选件，装好识别模型才能用") + "）：用户点一下开麦"
         "直接说话，说完停顿自动发送并闭麦；你的回复会被逐句念出来，念完自动再开麦；"
         "你念的时候用户一开口你就会被打断；再点📞关掉。对讲时没有单独页面，"
         "双方的话都以普通气泡出现在聊天窗里。语音识别（SenseVoice）和朗读都在用户本机"
@@ -876,7 +878,7 @@ def _resample_to_16k(samples, sr):
     x_new = np.linspace(0.0, 1.0, num=n, endpoint=False)
     return np.interp(x_new, x_old, samples).astype(np.float32)
 CALLP = {"proc": None, "skey": "", "reader": None, "events": [],
-         "turn": 0, "sid": None, "lock": threading.Lock()}
+         "turn": 0, "sid": None, "native_asr": False, "lock": threading.Lock()}
 SENT_SPLIT_RE = re.compile(r"[^。！？!?\n；;]*[。！？!?\n；;]+")
 CALL_HINT = (
     "(语音对讲模式：用户开了📞对讲机，正对着麦克风跟你说话，"
@@ -1816,15 +1818,26 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, UnicodeDecodeError):
                 self.send_error(400)
                 return
-            miss = voice_missing()
-            if miss or not CLAUDE:
-                self._send_bytes(json.dumps({"ok": False, "missing": miss},
-                                            ensure_ascii=False).encode("utf-8"),
-                                 "application/json; charset=utf-8")
-                return
-            err = voice_engine_up()
-            if err:
-                self._send_bytes(json.dumps({"ok": False, "err": err},
+            # 原生窗口自带系统识别（macOS Speech.framework），不用 sherpa 那一套，
+            # 也就不必检查模型文件在不在
+            native_asr = str(p.get("asr") or "") == "native"
+            if not native_asr:
+                miss = voice_missing()
+                if miss or not CLAUDE:
+                    if not miss and not CLAUDE:
+                        miss = ["没找到 claude 命令"]
+                    self._send_bytes(json.dumps({"ok": False, "missing": miss},
+                                                ensure_ascii=False).encode("utf-8"),
+                                     "application/json; charset=utf-8")
+                    return
+                err = voice_engine_up()
+                if err:
+                    self._send_bytes(json.dumps({"ok": False, "err": err},
+                                                ensure_ascii=False).encode("utf-8"),
+                                     "application/json; charset=utf-8")
+                    return
+            elif not CLAUDE:
+                self._send_bytes(json.dumps({"ok": False, "missing": ["没找到 claude 命令"]},
                                             ensure_ascii=False).encode("utf-8"),
                                  "application/json; charset=utf-8")
                 return
@@ -1864,6 +1877,7 @@ class Handler(BaseHTTPRequestHandler):
             CALLP["skey"] = sess["key"]
             CALLP["turn"] = 0
             CALLP["sid"] = sess.get("sid") or None
+            CALLP["native_asr"] = native_asr
             with VOICE["lock"]:
                 VOICE["queue"] = []
             VOICE["err"] = ""
@@ -1880,6 +1894,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error(400)
                 return
             text = str(p.get("text") or "").strip()
+            if text and CALLP.get("native_asr"):
+                text = hotword_fix(text)   # 系统识别没走桥接的识别线程，热词表在这里补
             proc = CALLP["proc"]
             if not text or not proc:
                 self.send_error(409)
@@ -3167,18 +3183,22 @@ class SingleInstanceServer(ThreadingHTTPServer):
 
 def native_window():
     """macOS 原生窗口（native/ 目录编译出的 SoftshellWindow.app）。
-    麦克风权限记在这个 App 名下，系统只问一次；没编译过就返回 None。"""
+    麦克风和语音识别权限都记在这个 App 名下，系统只问一次；没编译过就返回 None。"""
     if not IS_MAC:
         return None
-    exe = os.path.join(DIR, "SoftshellWindow.app", "Contents", "MacOS", "SoftshellWindow")
-    return exe if os.path.isfile(exe) else None
+    app = os.path.join(DIR, "SoftshellWindow.app")
+    exe = os.path.join(app, "Contents", "MacOS", "SoftshellWindow")
+    return app if os.path.isfile(exe) else None
 
 
 def open_window():
     url = "http://127.0.0.1:%d/" % PORT
     nw = native_window()
     if nw:
-        subprocess.Popen([nw, url], **SPAWN)
+        # 必须用 open 走 LaunchServices，不能直接执行包里的可执行文件：
+        # 那样 TCC 认不出这是个带用途说明的 App，一调用系统语音识别就把进程打死。
+        # -n 允许开多个窗口，和以前直接起进程的行为一致。
+        subprocess.Popen(["/usr/bin/open", "-n", "-a", nw, "--args", url], **SPAWN)
     elif BROWSER:
         subprocess.Popen(
             [BROWSER, "--app=" + url, "--window-size=900,860"],
