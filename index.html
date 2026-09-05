@@ -757,7 +757,9 @@
     return h + '</div>';
   }
   function renderTabs() {
-    var h = '<span class="tab' + (curTab === 0 ? ' on' : '') + '" data-tab="0">表情</span>';
+    // Mac 有 fn/🌐 键调系统表情面板，软壳内置的系统表情页多余，只在非 Mac 显示
+    var h = IS_MAC ? ''
+      : '<span class="tab' + (curTab === 0 ? ' on' : '') + '" data-tab="0">表情</span>';
     STICKERS.forEach(function (g, i) {
       h += '<span class="tab' + (curTab === i + 1 ? ' on' : '') + '" data-tab="' + (i + 1) +
            '">' + esc(g.name) + '</span>';
@@ -808,6 +810,7 @@
         });
       });
       if (curTab > STICKERS.length) curTab = 0;
+      if (IS_MAC && curTab === 0 && STICKERS.length) curTab = 1;
     }).catch(function () { /* 桥接还没起来，下次点开面板再试 */ });
   }
   /* ── 外观：头像和聊天背景。状态在 state.json 里，Claude 改完它，
@@ -2192,7 +2195,9 @@
   var PSEP = IS_MAC ? '/' : '\\';
   (function applyKeyHints() {
     var ta0 = document.getElementById('input');
-    ta0.placeholder = '说话（Enter换行，' + KEY_MOD + '+Enter发送，' + KEY_MOD + '+V可贴图）';
+    ta0.placeholder = IS_MAC
+      ? '说话（Enter发送，Shift+Enter换行，⌘+V可贴图）'
+      : '说话（Enter换行，' + KEY_MOD + '+Enter发送，' + KEY_MOD + '+V可贴图）';
     document.getElementById('attach').title = '发图片（也可以直接' + KEY_MOD + '+V粘贴截图）';
   })();
   fetch('/platform').then(function (r) { return r.json(); }).then(function (pf) {
@@ -2609,8 +2614,16 @@
     }
   });
   ta.addEventListener('keydown', function (e) {
-    // 回车=换行（打列表、写多行不打断），Ctrl+回车（Mac 上 ⌘+回车）=发送
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
+    if (e.key !== 'Enter') return;
+    // 输入法正在选字时的回车是上屏，不是发送
+    if (e.isComposing || e.keyCode === 229) return;
+    if (IS_MAC) {
+      // Mac：回车=发送，Shift+回车=换行（⌘+回车也照旧能发）
+      if (!e.shiftKey) { e.preventDefault(); send(); }
+    } else {
+      // 其他平台：回车=换行（打列表、写多行不打断），Ctrl+回车=发送
+      if (e.ctrlKey || e.metaKey) { e.preventDefault(); send(); }
+    }
   });
   // 输入框随内容长高，封顶约6行，发送清空后缩回
   function autoGrow() {
